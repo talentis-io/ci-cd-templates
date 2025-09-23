@@ -68,7 +68,7 @@ jobs:
   
   notify-completion:
     needs: [build-and-test, sonar-analysis]
-    if: ${{ always() && inputs.enable-webhook && secrets.WEBHOOK_URL && secrets.WEBHOOK_SECRET }}
+    if: ${{ always() && inputs.enable-webhook }}
     uses: ./.github/workflows/webhook-run.yml
     with:
       webhook-type: "sonar-completed"

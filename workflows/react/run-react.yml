@@ -1,0 +1,75 @@
+name: React CI/CD Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        required: false
+        type: string
+        default: '18'
+      project-key:
+        required: true
+        type: string
+      project-name:
+        required: true
+        type: string
+    secrets:
+      SONAR_TOKEN:
+        required: true
+      SONAR_HOST_URL:
+        required: true
+      WEBHOOK_URL:
+        required: true
+      WEBHOOK_SECRET:
+        required: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Lint
+        run: npm run lint || echo "No lint script found"
+      
+      - name: Build
+        run: npm run build
+      
+      - name: Test
+        run: npm test -- --coverage --watchAll=false
+  
+  sonar-analysis:
+    needs: build-and-test
+    if: always()
+    uses: ./.github/workflows/shared/sonar/run-sonar.yml
+    with:
+      project-key: ${{ inputs.project-key }}
+      project-name: ${{ inputs.project-name }}
+      language: "javascript"
+      sources: "src"
+      coverage-reports: "coverage/lcov.info"
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+  
+  notify-completion:
+    needs: [build-and-test, sonar-analysis]
+    if: always()
+    uses: ./.github/workflows/shared/webhook/run-webhook.yml
+    with:
+      webhook-type: "sonar-completed"
+      project-key: ${{ inputs.project-key }}
+      additional-data: '{"pipeline_type": "react", "node_version": "${{ inputs.node-version }}"}'
+    secrets:
+      WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+      WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}

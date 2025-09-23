@@ -51,7 +51,7 @@ jobs:
   sonar-analysis:
     needs: build-and-test
     if: always()
-    uses: ./.github/workflows/shared/sonar/run-sonar.yml
+    uses: talentis-io/ci-cd-templates/.github/workflows/run-sonar.yml@v1
     with:
       project-key: ${{ inputs.project-key }}
       project-name: ${{ inputs.project-name }}
@@ -65,7 +65,7 @@ jobs:
   notify-completion:
     needs: [build-and-test, sonar-analysis]
     if: always()
-    uses: ./.github/workflows/shared/webhook/run-webhook.yml
+    uses: talentis-io/ci-cd-templates/.github/workflows/run-webhook.yml@v1
     with:
       webhook-type: "sonar-completed"
       project-key: ${{ inputs.project-key }}

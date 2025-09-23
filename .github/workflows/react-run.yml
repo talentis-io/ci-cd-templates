@@ -17,37 +17,32 @@ on:
         required: false
         type: boolean
         default: false
-    secrets:
-      SONAR_TOKEN:
-        required: true
-      SONAR_HOST_URL:
-        required: true
-      WEBHOOK_URL:
-        required: false
-      WEBHOOK_SECRET:
-        required: false
 
 jobs:
-  sonar-analysis:
+  code-analysis:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch all history for accurate analysis
+          fetch-depth: 0
 
-      - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v2
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          projectBaseDir: .
-          args: >
-            -Dsonar.projectKey=${{ inputs.project-key }}
-            -Dsonar.projectName=${{ inputs.project-name }}
-            -Dsonar.language=javascript
-            -Dsonar.sources=src
-            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }}
-            -Dsonar.login=${{ secrets.SONAR_TOKEN }}
-            -Dsonar.scm.provider=git
-            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+          node-version: ${{ inputs.node-version }}
+
+      - name: Install SonarScanner
+        run: |
+          npm install -g sonarqube-scanner
+
+      - name: Run Local Analysis
+        run: |
+          sonar-scanner \
+            -Dsonar.projectKey=${{ inputs.project-key }} \
+            -Dsonar.projectName=${{ inputs.project-name }} \
+            -Dsonar.sources=src \
+            -Dsonar.language=javascript \
+            -Dsonar.scm.provider=git \
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
+            -Dsonar.sourceEncoding=UTF-8 \
+            -Dsonar.verbose=true

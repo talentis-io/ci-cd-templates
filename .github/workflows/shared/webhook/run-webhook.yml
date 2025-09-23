@@ -1,0 +1,105 @@
+name: Send Webhook Notification
+
+on:
+  workflow_call:
+    inputs:
+      webhook-type:
+        required: true
+        type: string
+      project-key:
+        required: true
+        type: string
+      additional-data:
+        required: false
+        type: string
+        default: "{}"
+    secrets:
+      WEBHOOK_URL:
+        required: true
+      WEBHOOK_SECRET:
+        required: true
+
+jobs:
+  webhook:
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Send webhook notification
+        env:
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+        run: |
+          STATUS="${{ job.status }}"
+          REPO="${{ github.repository }}"
+          BRANCH="${{ github.ref_name }}"
+          SHA="${{ github.sha }}"
+          RUN_ID="${{ github.run_id }}"
+          PROJECT_KEY="${{ inputs.project-key }}"
+          WEBHOOK_TYPE="${{ inputs.webhook-type }}"
+          ADDITIONAL_DATA="${{ inputs.additional-data }}"
+          TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          # Récupération des métriques SonarQube si disponibles
+          SONAR_METRICS="{}"
+          if [ "$WEBHOOK_TYPE" = "sonar-completed" ]; then
+            # Appel API SonarQube pour récupérer les métriques
+            SONAR_METRICS=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
+              "${{ secrets.SONAR_HOST_URL }}/api/measures/component?component=$PROJECT_KEY&metricKeys=bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density,ncloc,complexity" \
+              | jq '.component.measures // []' || echo "[]")
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg type "$WEBHOOK_TYPE" \
+            --arg status "$STATUS" \
+            --arg repo "$REPO" \
+            --arg branch "$BRANCH" \
+            --arg sha "$SHA" \
+            --arg run_id "$RUN_ID" \
+            --arg project_key "$PROJECT_KEY" \
+            --arg sent_at "$TS" \
+            --argjson sonar_metrics "$SONAR_METRICS" \
+            --argjson additional "$ADDITIONAL_DATA" \
+            '{
+              type: $type,
+              status: $status,
+              repo: $repo,
+              branch: $branch,
+              sha: $sha,
+              run_id: $run_id,
+              project_key: $project_key,
+              sent_at: $sent_at,
+              sonar_metrics: $sonar_metrics,
+              additional_data: $additional
+            }')
+
+          SIG="sha256=$(printf "%s" "$PAYLOAD" \
+            | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" -binary | xxd -p -c 256)"
+
+          # Envoi avec retry
+          ATTEMPTS=0; MAX=3; S=2
+          until [ $ATTEMPTS -ge $MAX ]; do
+            CODE=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" -X POST "$WEBHOOK_URL" \
+              -H "Content-Type: application/json" \
+              -H "X-Hub-Signature-256: $SIG" \
+              -H "X-Webhook-Timestamp: $TS" \
+              -H "X-Webhook-Id: gha-${RUN_ID}-${WEBHOOK_TYPE}" \
+              --data "$PAYLOAD" || echo "000")
+
+            if [ "$CODE" = "200" ] || [ "$CODE" = "201" ] || [ "$CODE" = "204" ]; then
+              echo "✅ Webhook $WEBHOOK_TYPE OK (HTTP $CODE)"
+              cat /tmp/resp.txt || true
+              exit 0
+            fi
+            
+            echo "❌ Webhook échec (HTTP $CODE)"
+            cat /tmp/resp.txt || true
+            ATTEMPTS=$((ATTEMPTS+1))
+            if [ $ATTEMPTS -lt $MAX ]; then
+              echo "🔄 Retry $ATTEMPTS/$MAX dans ${S}s…"
+              sleep $S
+              S=$((S*2))
+            fi
+          done
+
+          echo "⚠️ Webhook non délivré après $MAX tentatives"

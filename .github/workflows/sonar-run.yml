@@ -1,0 +1,50 @@
+name: Reusable SonarQube Scan
+
+on:
+  workflow_call:
+    inputs:
+      project-key:
+        required: true
+        type: string
+      project-name:
+        required: true
+        type: string
+      language:
+        required: false
+        type: string
+        default: "javascript"
+      sources:
+        required: false
+        type: string
+        default: "."
+      coverage-reports:
+        required: false
+        type: string
+        default: "coverage/lcov.info"
+    secrets:
+      SONAR_TOKEN:
+        required: true
+      SONAR_HOST_URL:
+        required: true
+
+jobs:
+  sonar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v2
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          projectBaseDir: .
+          args: >-
+            -Dsonar.projectKey=${{ inputs.project-key }}
+            -Dsonar.projectName=${{ inputs.project-name }}
+            -Dsonar.language=${{ inputs.language }}
+            -Dsonar.sources=${{ inputs.sources }}
+            -Dsonar.javascript.lcov.reportPaths=${{ inputs.coverage-reports }}
+
+

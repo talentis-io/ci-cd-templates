@@ -1,0 +1,38 @@
+name: Reusable Webhook Notifier
+
+on:
+  workflow_call:
+    inputs:
+      webhook-type:
+        required: true
+        type: string
+      project-key:
+        required: true
+        type: string
+      additional-data:
+        required: false
+        type: string
+        default: '{}'
+    secrets:
+      WEBHOOK_URL:
+        required: true
+      WEBHOOK_SECRET:
+        required: true
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send webhook
+        uses: distributhor/workflow-webhook@v3
+        with:
+          url: ${{ secrets.WEBHOOK_URL }}
+          secret: ${{ secrets.WEBHOOK_SECRET }}
+          data: >-
+            {
+              "type": "${{ inputs['webhook-type'] }}",
+              "project_key": "${{ inputs['project-key'] }}",
+              "additional": ${{ inputs['additional-data'] }}
+            }
+
+

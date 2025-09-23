@@ -32,6 +32,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for accurate analysis
 
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v2
@@ -40,20 +42,12 @@ jobs:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         with:
           projectBaseDir: .
-          args: >-
+          args: >
             -Dsonar.projectKey=${{ inputs.project-key }}
             -Dsonar.projectName=${{ inputs.project-name }}
             -Dsonar.language=javascript
             -Dsonar.sources=src
-
-  notify-completion:
-    needs: sonar-analysis
-    if: ${{ always() && inputs.enable-webhook }}
-    uses: ./.github/workflows/webhook-run.yml
-    with:
-      webhook-type: "sonar-completed"
-      project-key: ${{ inputs.project-key }}
-      additional-data: '{"pipeline_type": "react", "node_version": "${{ inputs.node-version }}"}'
-    secrets:
-      WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
-      WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }}
+            -Dsonar.login=${{ secrets.SONAR_TOKEN }}
+            -Dsonar.scm.provider=git
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info

@@ -13,15 +13,19 @@ on:
       project-name:
         required: true
         type: string
+      enable-webhook:
+        required: false
+        type: boolean
+        default: false
     secrets:
       SONAR_TOKEN:
         required: true
       SONAR_HOST_URL:
         required: true
       WEBHOOK_URL:
-        required: true
+        required: false
       WEBHOOK_SECRET:
-        required: true
+        required: false
 
 jobs:
   build-and-test:
@@ -64,7 +68,7 @@ jobs:
   
   notify-completion:
     needs: [build-and-test, sonar-analysis]
-    if: always()
+    if: ${{ always() && inputs.enable-webhook && secrets.WEBHOOK_URL && secrets.WEBHOOK_SECRET }}
     uses: ./.github/workflows/webhook-run.yml
     with:
       webhook-type: "sonar-completed"

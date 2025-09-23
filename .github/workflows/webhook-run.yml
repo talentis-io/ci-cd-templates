@@ -26,8 +26,8 @@ jobs:
       - name: Send webhook
         uses: distributhor/workflow-webhook@v3
         with:
-          url: ${{ secrets.WEBHOOK_URL }}
-          secret: ${{ secrets.WEBHOOK_SECRET }}
+          webhook_url: ${{ secrets.WEBHOOK_URL }}
+          webhook_secret: ${{ secrets.WEBHOOK_SECRET }}
           data: >-
             {
               "type": "${{ inputs['webhook-type'] }}",

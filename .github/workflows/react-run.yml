@@ -28,46 +28,26 @@ on:
         required: false
 
 jobs:
-  build-and-test:
+  sonar-analysis:
     runs-on: ubuntu-latest
-    
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v2
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         with:
-          node-version: ${{ inputs.node-version }}
-          cache: 'npm'
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Lint
-        run: npm run lint || echo "No lint script found"
-      
-      - name: Build
-        run: npm run build
-      
-      - name: Test
-        run: npm test -- --coverage --watchAll=false
-  
-  sonar-analysis:
-    needs: build-and-test
-    if: always()
-    uses: ./.github/workflows/sonar-run.yml
-    with:
-      project-key: ${{ inputs.project-key }}
-      project-name: ${{ inputs.project-name }}
-      language: "javascript"
-      sources: "src"
-      coverage-reports: "coverage/lcov.info"
-    secrets:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-  
+          projectBaseDir: .
+          args: >-
+            -Dsonar.projectKey=${{ inputs.project-key }}
+            -Dsonar.projectName=${{ inputs.project-name }}
+            -Dsonar.language=javascript
+            -Dsonar.sources=src
+
   notify-completion:
-    needs: [build-and-test, sonar-analysis]
+    needs: sonar-analysis
     if: ${{ always() && inputs.enable-webhook }}
     uses: ./.github/workflows/webhook-run.yml
     with:
@@ -77,5 +57,3 @@ jobs:
     secrets:
       WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
       WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
-
-

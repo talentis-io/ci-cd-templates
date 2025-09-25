@@ -1,75 +1,45 @@
-name: React CI/CD Pipeline
+name: React CI Pipeline
 
 on:
   workflow_call:
     inputs:
-      node-version:
-        required: false
-        type: string
-        default: '20'
-      project-key:
+      repo_name:
         required: true
         type: string
-      project-name:
+      branch_name:
         required: true
         type: string
-    secrets:
-      SONAR_TOKEN:
-        required: true
-      SONAR_HOST_URL:
-        required: true
-      WEBHOOK_URL:
-        required: true
-      WEBHOOK_SECRET:
-        required: true
 
 jobs:
-  build-and-test:
+  build-react:
     runs-on: ubuntu-latest
-    
     steps:
-      - uses: actions/checkout@v4
-      
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ inputs.node-version }}
-          cache: 'npm'
-      
+          node-version: 20
+
       - name: Install dependencies
-        run: npm ci
-      
-      - name: Lint
-        run: npm run lint || echo "No lint script found"
-      
-      - name: Build
-        run: npm run build
-      
-      - name: Test
-        run: npm test -- --coverage --watchAll=false
-  
-  sonar-analysis:
-    needs: build-and-test
-    if: always()
-    uses: talentis-io/ci-cd-templates/.github/workflows/run-sonar.yml@v1
+        run: npm ci || yarn install --frozen-lockfile
+
+      - name: Build project
+        run: npm run build || yarn build
+
+  sonar:
+    needs: build-react
+    uses: talentis-io/ci-cd-templates/.github/workflows/shared/sonar/run-sonar.yml@main
     with:
-      project-key: ${{ inputs.project-key }}
-      project-name: ${{ inputs.project-name }}
-      language: "javascript"
-      sources: "src"
-      coverage-reports: "coverage/lcov.info"
-    secrets:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-  
-  notify-completion:
-    needs: [build-and-test, sonar-analysis]
-    if: always()
-    uses: talentis-io/ci-cd-templates/.github/workflows/run-webhook.yml@v1
+      repo_name: ${{ inputs.repo_name }}
+      branch_name: ${{ inputs.branch_name }}
+    secrets: inherit
+
+  notify:
+    needs: sonar
+    uses: talentis-io/ci-cd-templates/.github/workflows/shared/webhook/run-webhook.yml@main
     with:
-      webhook-type: "sonar-completed"
-      project-key: ${{ inputs.project-key }}
-      additional-data: '{"pipeline_type": "react", "node_version": "${{ inputs.node-version }}"}'
-    secrets:
-      WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
-      WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+      repo_name: ${{ inputs.repo_name }}
+      branch_name: ${{ inputs.branch_name }}
+    secrets: inherit

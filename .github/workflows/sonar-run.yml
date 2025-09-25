@@ -9,11 +9,48 @@ on:
       branch_name:
         required: true
         type: string
+      build_command:
+        required: true
+        type: string
+      sonar_sources:
+        required: true
+        type: string
+      sonar_exclusions:
+        required: false
+        type: string
 
 jobs:
   sonar-scan:
     runs-on: ubuntu-latest
     steps:
+      # Checkout candidate repo
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/${{ inputs.repo_name }}
+          ref: ${{ inputs.branch_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Optional: setup Node.js or JDK depending on build_command
+      - name: Setup Environment
+        run: |
+          if [[ "${{ inputs.build_command }}" == *"npm"* ]]; then
+            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+          elif [[ "${{ inputs.build_command }}" == *"mvn"* ]]; then
+            sudo apt-get update && sudo apt-get install -y maven openjdk-17-jdk
+          fi
+
+      # Install dependencies (for JS)
+      - name: Install dependencies (if JS)
+        if: ${{ inputs.build_command == 'npm install' || startsWith(inputs.build_command, 'npm') || startsWith(inputs.build_command, 'yarn') }}
+        run: npm ci || yarn install --frozen-lockfile
+
+      # Build project
+      - name: Build project
+        run: ${{ inputs.build_command }}
+
+      # Ensure SonarCloud project exists
       - name: Ensure SonarCloud project exists
         run: |
           SONAR_PROJECT_KEY=talentis-io_${{ inputs.repo_name }}
@@ -29,6 +66,7 @@ jobs:
             sleep 5
           fi
 
+      # Run SonarCloud Scan
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v5.0.0
         env:
@@ -40,3 +78,6 @@ jobs:
             -Dsonar.organization=talentis-io
             -Dsonar.host.url=https://sonarcloud.io
             -Dsonar.branch.name=${{ inputs.branch_name }}
+            -Dsonar.sources=${{ inputs.sonar_sources }}
+            ${{ inputs.sonar_exclusions && '-Dsonar.exclusions=' + inputs.sonar_exclusions }}
+            -Dsonar.scm.provider=git

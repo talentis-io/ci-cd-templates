@@ -34,6 +34,9 @@ jobs:
     with:
       repo_name: ${{ inputs.repo_name }}
       branch_name: ${{ inputs.branch_name }}
+      build_command: "npm run build"
+      sonar_sources: "src"
+      sonar_exclusions: "**/node_modules/**,**/build/**"
     secrets: inherit
 
   notify:

@@ -26,6 +26,21 @@ jobs:
       - name: Build
         run: npm run build || yarn build
 
+      - name: Ensure SonarCloud project exists
+        run: |
+          SONAR_PROJECT_KEY=talentis-io_${{ inputs.repo_name }}
+          SONAR_ORG=talentis-io
+          RESPONSE=$(curl -s -u ${{ secrets.SONAR_TOKEN }}: \
+            "https://sonarcloud.io/api/projects/search?projects=$SONAR_PROJECT_KEY")
+          if ! echo "$RESPONSE" | grep -q "\"key\":\"$SONAR_PROJECT_KEY\""; then
+            curl -s -u ${{ secrets.SONAR_TOKEN }}: -X POST \
+              "https://sonarcloud.io/api/projects/create" \
+              -d "project=$SONAR_PROJECT_KEY" \
+              -d "organization=$SONAR_ORG" \
+              -d "name=${{ inputs.repo_name }}"
+            sleep 5
+          fi
+
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v5.0.0
         env:
@@ -37,3 +52,4 @@ jobs:
             -Dsonar.organization=talentis-io
             -Dsonar.host.url=https://sonarcloud.io
             -Dsonar.branch.name=master
+

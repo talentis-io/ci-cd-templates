@@ -1,48 +1,38 @@
-name: React CI/CD Pipeline
+# .github/workflows/react-run.yml in ci-cd-template
+name: React CI with SonarCloud
 
 on:
   workflow_call:
     inputs:
-      node-version:
-        required: false
-        type: string
-        default: '20'
-      project-key:
+      repo_name:
         required: true
         type: string
-      project-name:
-        required: true
-        type: string
-      enable-webhook:
-        required: false
-        type: boolean
-        default: false
 
 jobs:
-  code-analysis:
+  build-sonar:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - name: Checkout candidate repo
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ inputs.node-version }}
+          node-version: 20
 
-      - name: Install SonarScanner
-        run: |
-          npm install -g sonarqube-scanner
+      - name: Install dependencies
+        run: npm ci || yarn install --frozen-lockfile
 
-      - name: Run Local Analysis
-        run: |
-          sonar-scanner \
-            -Dsonar.projectKey=${{ inputs.project-key }} \
-            -Dsonar.projectName=${{ inputs.project-name }} \
-            -Dsonar.sources=src \
-            -Dsonar.language=javascript \
-            -Dsonar.scm.provider=git \
-            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
-            -Dsonar.sourceEncoding=UTF-8 \
-            -Dsonar.verbose=true
+      - name: Build
+        run: npm run build || yarn build
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@v5.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.projectKey=talentis-io_${{ inputs.repo_name }}
+            -Dsonar.organization=talentis-io
+            -Dsonar.host.url=https://sonarcloud.io

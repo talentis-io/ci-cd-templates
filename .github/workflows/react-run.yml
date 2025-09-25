@@ -1,5 +1,4 @@
-# .github/workflows/react-run.yml in ci-cd-template
-name: React CI with SonarCloud
+name: React CI Pipeline
 
 on:
   workflow_call:
@@ -7,12 +6,15 @@ on:
       repo_name:
         required: true
         type: string
+      branch_name:
+        required: true
+        type: string
 
 jobs:
-  build-sonar:
+  build-react:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout candidate repo
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -23,33 +25,21 @@ jobs:
       - name: Install dependencies
         run: npm ci || yarn install --frozen-lockfile
 
-      - name: Build
+      - name: Build project
         run: npm run build || yarn build
 
-      - name: Ensure SonarCloud project exists
-        run: |
-          SONAR_PROJECT_KEY=talentis-io_${{ inputs.repo_name }}
-          SONAR_ORG=talentis-io
-          RESPONSE=$(curl -s -u ${{ secrets.SONAR_TOKEN }}: \
-            "https://sonarcloud.io/api/projects/search?projects=$SONAR_PROJECT_KEY")
-          if ! echo "$RESPONSE" | grep -q "\"key\":\"$SONAR_PROJECT_KEY\""; then
-            curl -s -u ${{ secrets.SONAR_TOKEN }}: -X POST \
-              "https://sonarcloud.io/api/projects/create" \
-              -d "project=$SONAR_PROJECT_KEY" \
-              -d "organization=$SONAR_ORG" \
-              -d "name=${{ inputs.repo_name }}"
-            sleep 5
-          fi
+  sonar:
+    needs: build-react
+    uses: talentis-io/ci-cd-templates/.github/workflows/sonar-run.yml@master
+    with:
+      repo_name: ${{ inputs.repo_name }}
+      branch_name: ${{ inputs.branch_name }}
+    secrets: inherit
 
-      - name: SonarCloud Scan
-        uses: SonarSource/sonarqube-scan-action@v5.0.0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        with:
-          args: >
-            -Dsonar.projectKey=talentis-io_${{ inputs.repo_name }}
-            -Dsonar.organization=talentis-io
-            -Dsonar.host.url=https://sonarcloud.io
-            -Dsonar.branch.name=master
-
+  notify:
+    needs: sonar
+    uses: talentis-io/ci-cd-templates/.github/workflows/webhook-run.yml@master
+    with:
+      repo_name: ${{ inputs.repo_name }}
+      branch_name: ${{ inputs.branch_name }}
+    secrets: inherit

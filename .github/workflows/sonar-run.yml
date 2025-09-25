@@ -73,11 +73,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
-          args: |
+          args: >
             -Dsonar.projectKey=talentis-io_${{ inputs.repo_name }}
             -Dsonar.organization=talentis-io
             -Dsonar.host.url=https://sonarcloud.io
             -Dsonar.branch.name=${{ inputs.branch_name }}
             -Dsonar.sources=${{ inputs.sonar_sources }}
-            ${{ inputs.sonar_exclusions != '' && format('-Dsonar.exclusions={0}', inputs.sonar_exclusions) }}
+            ${{ inputs.sonar_exclusions != '' && format('-Dsonar.exclusions={0}', inputs.sonar_exclusions) || '' }}
             -Dsonar.scm.provider=git

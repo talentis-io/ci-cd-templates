@@ -1,0 +1,50 @@
+name: Python CI Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      repo_name:
+        required: true
+        type: string
+      branch_name:
+        required: true
+        type: string
+
+jobs:
+  build-python:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest
+
+  sonar:
+    needs: build-python
+    uses: talentis-io/ci-cd-templates/.github/workflows/sonar-run.yml@master
+    with:
+      repo_name: ${{ inputs.repo_name }}
+      branch_name: ${{ inputs.branch_name }}
+      build_command: "pytest"
+      sonar_sources: "."
+      sonar_exclusions: "**/venv/**,**/__pycache__/**"
+    secrets: inherit
+
+  notify:
+    needs: sonar
+    uses: talentis-io/ci-cd-templates/.github/workflows/webhook-run.yml@master
+    with:
+      repo_name: ${{ inputs.repo_name }}
+      branch_name: ${{ inputs.branch_name }}
+    secrets: inherit

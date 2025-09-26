@@ -1,0 +1,46 @@
+name: Java CI Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      repo_name:
+        required: true
+        type: string
+      branch_name:
+        required: true
+        type: string
+
+jobs:
+  build-java:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup JDK
+        uses: actions/setup-java@v3
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Build project
+        run: mvn clean install
+
+  sonar:
+    needs: build-java
+    uses: talentis-io/ci-cd-templates/.github/workflows/sonar-run.yml@master
+    with:
+      repo_name: ${{ inputs.repo_name }}
+      branch_name: ${{ inputs.branch_name }}
+      build_command: "mvn clean install"
+      sonar_sources: "src/main/java"
+      sonar_exclusions: "**/target/**"
+    secrets: inherit
+
+  notify:
+    needs: sonar
+    uses: talentis-io/ci-cd-templates/.github/workflows/webhook-run.yml@master
+    with:
+      repo_name: ${{ inputs.repo_name }}
+      branch_name: ${{ inputs.branch_name }}
+    secrets: inherit

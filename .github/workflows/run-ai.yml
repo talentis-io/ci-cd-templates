@@ -93,7 +93,7 @@ jobs:
           OLLAMA_MODEL: ${{ secrets.OLLAMA_MODEL || 'llama3.2' }}
         run: |
           # Prepare the prompt for AI analysis
-          cat > /tmp/prompt.txt << 'EOF'
+          cat > /tmp/prompt.txt << 'PROMPT_EOF'
           Tu es un expert en analyse de code et qualité logicielle. Analyse le projet suivant basé sur les métriques SonarCloud et génère un rapport complet en français.
 
           INFORMATIONS DU PROJET:
@@ -126,7 +126,7 @@ jobs:
           }
           
           Analyse le code et donne un score de 0 à 10, puis liste les points forts, points faibles et recommandations.
-          EOF
+          PROMPT_EOF
           
           PROMPT=$(cat /tmp/prompt.txt)
           
@@ -134,7 +134,7 @@ jobs:
           RESPONSE=$(curl -s -X POST "$OLLAMA_BASE_URL/v1/chat/completions" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $OLLAMA_API_KEY" \
-            -d @- << EOF
+            -d @- << 'JSON_EOF'
           {
             "model": "$OLLAMA_MODEL",
             "messages": [
@@ -146,7 +146,7 @@ jobs:
             "temperature": 0.7,
             "max_tokens": 2000
           }
-          EOF
+          JSON_EOF
           )
           
           # Extract the AI response

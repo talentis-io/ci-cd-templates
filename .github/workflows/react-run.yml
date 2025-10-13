@@ -39,8 +39,17 @@ jobs:
       sonar_exclusions: "**/node_modules/**,**/build/**"
     secrets: inherit
 
-  notify:
+  ai-analysis:
     needs: sonar
+    uses: talentis-io/ci-cd-templates/.github/workflows/run-ai.yml@master
+    with:
+      repo_name: ${{ inputs.repo_name }}
+      branch_name: ${{ inputs.branch_name }}
+      sonar_project_key: talentis-io_${{ inputs.repo_name }}
+    secrets: inherit
+
+  notify:
+    needs: [sonar, ai-analysis]
     uses: talentis-io/ci-cd-templates/.github/workflows/webhook-run.yml@master
     with:
       repo_name: ${{ inputs.repo_name }}

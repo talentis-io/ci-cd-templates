@@ -1,0 +1,249 @@
+name: Run AI Analysis
+
+on:
+  workflow_call:
+    inputs:
+      repo_name:
+        required: true
+        type: string
+      branch_name:
+        required: true
+        type: string
+      sonar_project_key:
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  ai-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/${{ inputs.repo_name }}
+          ref: ${{ inputs.branch_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get SonarCloud metrics
+        id: sonar-metrics
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_PROJECT_KEY: ${{ inputs.sonar_project_key != '' && inputs.sonar_project_key || format('talentis-io_{0}', inputs.repo_name) }}
+        run: |
+          # Wait a moment for SonarCloud analysis to complete
+          sleep 10
+          
+          # Get project measures from SonarCloud
+          RESPONSE=$(curl -s -u $SONAR_TOKEN: \
+            "https://sonarcloud.io/api/measures/component?component=$SONAR_PROJECT_KEY&metricKeys=bugs,vulnerabilities,security_hotspots,code_smells,coverage,duplicated_lines_density,ncloc,sqale_index,reliability_rating,security_rating,sqale_rating")
+          
+          echo "sonar_response<<EOF" >> $GITHUB_OUTPUT
+          echo "$RESPONSE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          # Extract key metrics
+          BUGS=$(echo "$RESPONSE" | jq -r '.component.measures[] | select(.metric == "bugs") | .value // "0"')
+          VULNERABILITIES=$(echo "$RESPONSE" | jq -r '.component.measures[] | select(.metric == "vulnerabilities") | .value // "0"')
+          CODE_SMELLS=$(echo "$RESPONSE" | jq -r '.component.measures[] | select(.metric == "code_smells") | .value // "0"')
+          COVERAGE=$(echo "$RESPONSE" | jq -r '.component.measures[] | select(.metric == "coverage") | .value // "0"')
+          LINES_OF_CODE=$(echo "$RESPONSE" | jq -r '.component.measures[] | select(.metric == "ncloc") | .value // "0"')
+          
+          echo "bugs=$BUGS" >> $GITHUB_OUTPUT
+          echo "vulnerabilities=$VULNERABILITIES" >> $GITHUB_OUTPUT
+          echo "code_smells=$CODE_SMELLS" >> $GITHUB_OUTPUT
+          echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
+          echo "lines_of_code=$LINES_OF_CODE" >> $GITHUB_OUTPUT
+
+      - name: Prepare project context
+        id: project-context
+        run: |
+          # Get project structure and key files
+          PROJECT_STRUCTURE=$(find . -type f -name "*.js" -o -name "*.jsx" -o -name "*.ts" -o -name "*.tsx" -o -name "*.json" -o -name "package.json" -o -name "*.md" | head -20)
+          
+          # Get package.json content if exists
+          PACKAGE_CONTENT=""
+          if [ -f "package.json" ]; then
+            PACKAGE_CONTENT=$(cat package.json)
+          fi
+          
+          # Get README content if exists
+          README_CONTENT=""
+          if [ -f "README.md" ]; then
+            README_CONTENT=$(head -50 README.md)
+          fi
+          
+          echo "project_structure<<EOF" >> $GITHUB_OUTPUT
+          echo "$PROJECT_STRUCTURE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "package_content<<EOF" >> $GITHUB_OUTPUT
+          echo "$PACKAGE_CONTENT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "readme_content<<EOF" >> $GITHUB_OUTPUT
+          echo "$README_CONTENT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Generate AI Analysis
+        id: ai-analysis
+        env:
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          OLLAMA_BASE_URL: ${{ secrets.OLLAMA_BASE_URL || 'https://api.ollama.ai' }}
+          OLLAMA_MODEL: ${{ secrets.OLLAMA_MODEL || 'llama3.2' }}
+        run: |
+          # Prepare the prompt for AI analysis
+          PROMPT="Tu es un expert en analyse de code et qualité logicielle. Analyse le projet suivant basé sur les métriques SonarCloud et génère un rapport complet en français.
+
+          INFORMATIONS DU PROJET:
+          - Nom du projet: ${{ inputs.repo_name }}
+          - Branche: ${{ inputs.branch_name }}
+          
+          MÉTRIQUES SONARCLOUD:
+          - Bugs: ${{ steps.sonar-metrics.outputs.bugs }}
+          - Vulnérabilités: ${{ steps.sonar-metrics.outputs.vulnerabilities }}
+          - Code smells: ${{ steps.sonar-metrics.outputs.code_smells }}
+          - Couverture de code: ${{ steps.sonar-metrics.outputs.coverage }}%
+          - Lignes de code: ${{ steps.sonar-metrics.outputs.lines_of_code }}
+          
+          STRUCTURE DU PROJET:
+          ${{ steps.project-context.outputs.project_structure }}
+          
+          PACKAGE.JSON:
+          ${{ steps.project-context.outputs.package_content }}
+          
+          README:
+          ${{ steps.project-context.outputs.readme_content }}
+          
+          Réponds UNIQUEMENT au format JSON suivant:
+          {
+            \"score\": [score de 0 à 10],
+            \"points_forts\": [\"liste des points forts\"],
+            \"points_faibles\": [\"liste des points faibles\"],
+            \"recommandations\": [\"liste des recommandations\"],
+            \"resume\": \"résumé général de l'analyse\"
+          }
+          
+          Analyse le code et donne un score de 0 à 10, puis liste les points forts, points faibles et recommandations."
+          
+          # Call Ollama API with API key
+          RESPONSE=$(curl -s -X POST "$OLLAMA_BASE_URL/v1/chat/completions" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $OLLAMA_API_KEY" \
+            -d "{
+              \"model\": \"$OLLAMA_MODEL\",
+              \"messages\": [
+                {
+                  \"role\": \"user\",
+                  \"content\": \"$PROMPT\"
+                }
+              ],
+              \"temperature\": 0.7,
+              \"max_tokens\": 2000
+            }")
+          
+          # Extract the AI response
+          AI_RESPONSE=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // empty')
+          
+          # Parse JSON response
+          SCORE=$(echo "$AI_RESPONSE" | jq -r '.score // "N/A"')
+          POINTS_FORTS=$(echo "$AI_RESPONSE" | jq -r '.points_forts[]? // empty' | tr '\n' ';')
+          POINTS_FAIBLES=$(echo "$AI_RESPONSE" | jq -r '.points_faibles[]? // empty' | tr '\n' ';')
+          RECOMMANDATIONS=$(echo "$AI_RESPONSE" | jq -r '.recommandations[]? // empty' | tr '\n' ';')
+          RESUME=$(echo "$AI_RESPONSE" | jq -r '.resume // "Analyse non disponible"')
+          
+          echo "score=$SCORE" >> $GITHUB_OUTPUT
+          echo "points_forts=$POINTS_FORTS" >> $GITHUB_OUTPUT
+          echo "points_faibles=$POINTS_FAIBLES" >> $GITHUB_OUTPUT
+          echo "recommandations=$RECOMMANDATIONS" >> $GITHUB_OUTPUT
+          echo "resume=$RESUME" >> $GITHUB_OUTPUT
+          echo "full_response<<EOF" >> $GITHUB_OUTPUT
+          echo "$AI_RESPONSE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Send AI Analysis to Webhook
+        env:
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          REPO_NAME: ${{ inputs.repo_name }}
+          BRANCH_NAME: ${{ inputs.branch_name }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_NUMBER: ${{ github.run_number }}
+          SHA: ${{ github.sha }}
+          AI_SCORE: ${{ steps.ai-analysis.outputs.score }}
+          AI_POINTS_FORTS: ${{ steps.ai-analysis.outputs.points_forts }}
+          AI_POINTS_FAIBLES: ${{ steps.ai-analysis.outputs.points_faibles }}
+          AI_RECOMMANDATIONS: ${{ steps.ai-analysis.outputs.recommandations }}
+          AI_RESUME: ${{ steps.ai-analysis.outputs.resume }}
+        run: |
+          TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          PAYLOAD=$(jq -n \
+            --arg repoName "$REPO_NAME" \
+            --arg branchName "$BRANCH_NAME" \
+            --arg runId "$RUN_ID" \
+            --arg runNumber "$RUN_NUMBER" \
+            --arg sha "$SHA" \
+            --arg timestamp "$TS" \
+            --arg score "$AI_SCORE" \
+            --arg pointsForts "$AI_POINTS_FORTS" \
+            --arg pointsFaibles "$AI_POINTS_FAIBLES" \
+            --arg recommandations "$AI_RECOMMANDATIONS" \
+            --arg resume "$AI_RESUME" \
+            '{
+              type: "ai_analysis",
+              repository: {
+                name: $repoName,
+                branch: $branchName,
+                commit: $sha
+              },
+              pipeline: {
+                run_id: $runId,
+                run_number: $runNumber,
+                timestamp: $timestamp
+              },
+              ai_analysis: {
+                score: ($score | tonumber? // 0),
+                points_forts: ($pointsForts | split(";") | map(select(. != ""))),
+                points_faibles: ($pointsFaibles | split(";") | map(select(. != ""))),
+                recommandations: ($recommandations | split(";") | map(select(. != ""))),
+                resume: $resume
+              }
+            }')
+
+          ATTEMPTS=0; MAX=3; S=2
+          until [ $ATTEMPTS -ge $MAX ]; do
+            CODE=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" -X POST "$WEBHOOK_URL" \
+              -H "Content-Type: application/json" \
+              --data "$PAYLOAD" || echo "000")
+
+            if [ "$CODE" = "200" ] || [ "$CODE" = "201" ] || [ "$CODE" = "204" ]; then
+              echo "AI Analysis webhook sent successfully (HTTP $CODE)"
+              cat /tmp/resp.txt || true
+              exit 0
+            fi
+            echo "AI Analysis webhook failed (HTTP $CODE)"
+            cat /tmp/resp.txt || true
+            ATTEMPTS=$((ATTEMPTS+1))
+            echo "Retry $ATTEMPTS/$MAX in ${S}s…"
+            sleep $S
+            S=$((S*2))
+          done
+
+          echo "⚠ AI Analysis webhook not delivered after $MAX attempts (non-blocking)."
+
+      - name: Display AI Analysis Results
+        run: |
+          echo "=== RÉSULTATS DE L'ANALYSE IA ==="
+          echo "Score: ${{ steps.ai-analysis.outputs.score }}/10"
+          echo ""
+          echo "Points forts:"
+          echo "${{ steps.ai-analysis.outputs.points_forts }}" | tr ';' '\n' | sed 's/^/- /'
+          echo ""
+          echo "Points faibles:"
+          echo "${{ steps.ai-analysis.outputs.points_faibles }}" | tr ';' '\n' | sed 's/^/- /'
+          echo ""
+          echo "Recommandations:"
+          echo "${{ steps.ai-analysis.outputs.recommandations }}" | tr ';' '\n' | sed 's/^/- /'
+          echo ""
+          echo "Résumé:"
+          echo "${{ steps.ai-analysis.outputs.resume }}"

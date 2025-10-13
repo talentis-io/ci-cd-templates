@@ -93,7 +93,8 @@ jobs:
           OLLAMA_MODEL: ${{ secrets.OLLAMA_MODEL || 'llama3.2' }}
         run: |
           # Prepare the prompt for AI analysis
-          PROMPT="Tu es un expert en analyse de code et qualité logicielle. Analyse le projet suivant basé sur les métriques SonarCloud et génère un rapport complet en français.
+          cat > /tmp/prompt.txt << 'EOF'
+          Tu es un expert en analyse de code et qualité logicielle. Analyse le projet suivant basé sur les métriques SonarCloud et génère un rapport complet en français.
 
           INFORMATIONS DU PROJET:
           - Nom du projet: ${{ inputs.repo_name }}
@@ -117,30 +118,36 @@ jobs:
           
           Réponds UNIQUEMENT au format JSON suivant:
           {
-            \"score\": [score de 0 à 10],
-            \"points_forts\": [\"liste des points forts\"],
-            \"points_faibles\": [\"liste des points faibles\"],
-            \"recommandations\": [\"liste des recommandations\"],
-            \"resume\": \"résumé général de l'analyse\"
+            "score": [score de 0 à 10],
+            "points_forts": ["liste des points forts"],
+            "points_faibles": ["liste des points faibles"],
+            "recommandations": ["liste des recommandations"],
+            "resume": "résumé général de l'analyse"
           }
           
-          Analyse le code et donne un score de 0 à 10, puis liste les points forts, points faibles et recommandations."
+          Analyse le code et donne un score de 0 à 10, puis liste les points forts, points faibles et recommandations.
+          EOF
+          
+          PROMPT=$(cat /tmp/prompt.txt)
           
           # Call Ollama API with API key
           RESPONSE=$(curl -s -X POST "$OLLAMA_BASE_URL/v1/chat/completions" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $OLLAMA_API_KEY" \
-            -d "{
-              \"model\": \"$OLLAMA_MODEL\",
-              \"messages\": [
-                {
-                  \"role\": \"user\",
-                  \"content\": \"$PROMPT\"
-                }
-              ],
-              \"temperature\": 0.7,
-              \"max_tokens\": 2000
-            }")
+            -d @- << EOF
+          {
+            "model": "$OLLAMA_MODEL",
+            "messages": [
+              {
+                "role": "user",
+                "content": $(echo "$PROMPT" | jq -R -s .)
+              }
+            ],
+            "temperature": 0.7,
+            "max_tokens": 2000
+          }
+          EOF
+          )
           
           # Extract the AI response
           AI_RESPONSE=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // empty')

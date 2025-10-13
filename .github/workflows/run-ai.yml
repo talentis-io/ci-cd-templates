@@ -130,24 +130,29 @@ jobs:
           
           PROMPT=$(cat /tmp/prompt.txt)
           
-          # Call Ollama API with API key
-          RESPONSE=$(curl -s -X POST "$OLLAMA_BASE_URL/v1/chat/completions" \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer $OLLAMA_API_KEY" \
-            -d @- << 'JSON_EOF'
+          # Escape the prompt content for JSON
+          ESCAPED_PROMPT=$(echo "$PROMPT" | jq -R -s .)
+          
+          # Create the JSON payload
+          cat > /tmp/payload.json << JSON_EOF
           {
             "model": "$OLLAMA_MODEL",
             "messages": [
               {
                 "role": "user",
-                "content": $(echo "$PROMPT" | jq -R -s .)
+                "content": $ESCAPED_PROMPT
               }
             ],
             "temperature": 0.7,
             "max_tokens": 2000
           }
           JSON_EOF
-          )
+          
+          # Call Ollama API with API key
+          RESPONSE=$(curl -s -X POST "$OLLAMA_BASE_URL/v1/chat/completions" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $OLLAMA_API_KEY" \
+            -d @/tmp/payload.json)
           
           # Extract the AI response
           AI_RESPONSE=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // empty')

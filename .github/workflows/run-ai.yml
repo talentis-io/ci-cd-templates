@@ -99,22 +99,26 @@ jobs:
           INFORMATIONS DU PROJET:
           - Nom du projet: ${{ inputs.repo_name }}
           - Branche: ${{ inputs.branch_name }}
-          
+
           MÉTRIQUES SONARCLOUD:
           - Bugs: ${{ steps.sonar-metrics.outputs.bugs }}
           - Vulnérabilités: ${{ steps.sonar-metrics.outputs.vulnerabilities }}
           - Code smells: ${{ steps.sonar-metrics.outputs.code_smells }}
           - Couverture de code: ${{ steps.sonar-metrics.outputs.coverage }}%
           - Lignes de code: ${{ steps.sonar-metrics.outputs.lines_of_code }}
-          
-          Réponds UNIQUEMENT au format JSON suivant:
+
+          Réponds UNIQUEMENT au format JSON suivant avec l'analyse au format HTML:
           {
             "score": [score de 0 à 10],
-            "points_forts": ["liste des points forts"],
-            "points_faibles": ["liste des points faibles"],
-            "recommandations": ["liste des recommandations"],
-            "resume": "résumé général de l'analyse"
+            "analysis_html": "<div class='ai-analysis-report' style='font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; border-radius: 8px;'><div class='analysis-header' style='margin-bottom: 20px; text-align: center;'><h2 style='color: #333;'>🤖 Rapport d'Analyse IA</h2><div class='score-badge' style='display: inline-block; background: #007bff; color: white; padding: 10px 20px; border-radius: 5px; font-size: 18px; font-weight: bold;'>Score: [SCORE]/10</div></div><div class='analysis-section' style='margin: 20px 0; background: white; padding: 15px; border-radius: 5px;'><h3 style='color: #28a745; border-bottom: 2px solid #28a745; padding-bottom: 10px;'>💪 Points Forts</h3><ul style='list-style-type: none; padding: 10px 0;'>[POINTS_FORTS_LIST]</ul></div><div class='analysis-section' style='margin: 20px 0; background: white; padding: 15px; border-radius: 5px;'><h3 style='color: #dc3545; border-bottom: 2px solid #dc3545; padding-bottom: 10px;'>⚠️ Points Faibles</h3><ul style='list-style-type: none; padding: 10px 0;'>[POINTS_FAIBLES_LIST]</ul></div><div class='analysis-section' style='margin: 20px 0; background: white; padding: 15px; border-radius: 5px;'><h3 style='color: #ffc107; border-bottom: 2px solid #ffc107; padding-bottom: 10px;'>✅ Recommandations</h3><ul style='list-style-type: none; padding: 10px 0;'>[RECOMMANDATIONS_LIST]</ul></div><div class='analysis-section' style='margin: 20px 0; background: white; padding: 15px; border-radius: 5px;'><h3 style='color: #17a2b8; border-bottom: 2px solid #17a2b8; padding-bottom: 10px;'>📝 Résumé</h3><div class='resume-text' style='color: #555; line-height: 1.6;'>[RESUME]</div></div></div>"
           }
+
+          Où:
+          - [SCORE] = score de 0 à 10
+          - [POINTS_FORTS_LIST] = liste HTML des points forts au format: <li style='padding: 8px 0; color: #333;'>✓ Point fort 1</li><li style='padding: 8px 0; color: #333;'>✓ Point fort 2</li>...
+          - [POINTS_FAIBLES_LIST] = liste HTML des points faibles au format: <li style='padding: 8px 0; color: #333;'>✗ Point faible 1</li><li style='padding: 8px 0; color: #333;'>✗ Point faible 2</li>...
+          - [RECOMMANDATIONS_LIST] = liste HTML des recommandations au format: <li style='padding: 8px 0; color: #333;'>→ Recommandation 1</li><li style='padding: 8px 0; color: #333;'>→ Recommandation 2</li>...
+          - [RESUME] = résumé général de l'analyse en texte brut
           PROMPT_EOF
           
           PROMPT=$(cat /tmp/prompt.txt)

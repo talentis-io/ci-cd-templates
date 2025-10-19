@@ -89,8 +89,8 @@ jobs:
         id: ai-analysis
         env:
           OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
-          OLLAMA_BASE_URL: ${{ secrets.OLLAMA_BASE_URL || 'https://api.openai.com' }}
-          OLLAMA_MODEL: ${{ secrets.OLLAMA_MODEL || 'gpt-4o-mini' }}
+          OLLAMA_BASE_URL: ${{ secrets.OLLAMA_BASE_URL || 'https://ollama.com' }}
+          OLLAMA_MODEL: ${{ secrets.OLLAMA_MODEL || 'gpt-oss:120b' }}
         run: |
           # Prepare the prompt for AI analysis
           cat > /tmp/prompt.txt << 'PROMPT_EOF'

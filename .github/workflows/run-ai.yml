@@ -107,15 +107,6 @@ jobs:
           - Couverture de code: ${{ steps.sonar-metrics.outputs.coverage }}%
           - Lignes de code: ${{ steps.sonar-metrics.outputs.lines_of_code }}
           
-          STRUCTURE DU PROJET:
-          ${{ steps.project-context.outputs.project_structure }}
-          
-          PACKAGE.JSON:
-          ${{ steps.project-context.outputs.package_content }}
-          
-          README:
-          ${{ steps.project-context.outputs.readme_content }}
-          
           Réponds UNIQUEMENT au format JSON suivant:
           {
             "score": [score de 0 à 10],
@@ -124,16 +115,11 @@ jobs:
             "recommandations": ["liste des recommandations"],
             "resume": "résumé général de l'analyse"
           }
-          
-          Analyse le code et donne un score de 0 à 10, puis liste les points forts, points faibles et recommandations.
           PROMPT_EOF
           
           PROMPT=$(cat /tmp/prompt.txt)
-          
-          # Escape the prompt content for JSON
           ESCAPED_PROMPT=$(echo "$PROMPT" | jq -R -s .)
           
-          # Create the JSON payload
           cat > /tmp/payload.json << JSON_EOF
           {
             "model": "$OLLAMA_MODEL",
@@ -148,30 +134,61 @@ jobs:
           }
           JSON_EOF
           
-          # Call Ollama API with API key
-          RESPONSE=$(curl -s -X POST "$OLLAMA_BASE_URL/v1/chat/completions" \
+          echo "DEBUG: Calling API at $OLLAMA_BASE_URL"
+          echo "DEBUG: Model: $OLLAMA_MODEL"
+          
+          # Call API with better error handling
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$OLLAMA_BASE_URL/v1/chat/completions" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $OLLAMA_API_KEY" \
             -d @/tmp/payload.json)
           
-          # Extract the AI response
-          AI_RESPONSE=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // empty')
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          RESPONSE_BODY=$(echo "$RESPONSE" | sed '$d')
           
-          # Parse JSON response
-          SCORE=$(echo "$AI_RESPONSE" | jq -r '.score // "N/A"')
-          POINTS_FORTS=$(echo "$AI_RESPONSE" | jq -r '.points_forts[]? // empty' | tr '\n' ';')
-          POINTS_FAIBLES=$(echo "$AI_RESPONSE" | jq -r '.points_faibles[]? // empty' | tr '\n' ';')
-          RECOMMANDATIONS=$(echo "$AI_RESPONSE" | jq -r '.recommandations[]? // empty' | tr '\n' ';')
-          RESUME=$(echo "$AI_RESPONSE" | jq -r '.resume // "Analyse non disponible"')
+          echo "DEBUG: HTTP Status: $HTTP_CODE"
+          echo "DEBUG: Response: $RESPONSE_BODY" | head -c 500
+          
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "ERROR: API returned HTTP $HTTP_CODE"
+            echo "Full response:"
+            echo "$RESPONSE_BODY"
+            exit 1
+          fi
+          
+          # Extract the AI response
+          AI_RESPONSE=$(echo "$RESPONSE_BODY" | jq -r '.choices[0].message.content // empty')
+          
+          if [ -z "$AI_RESPONSE" ]; then
+            echo "ERROR: No AI response extracted"
+            exit 1
+          fi
+          
+          echo "DEBUG: AI Response received (length: ${#AI_RESPONSE})"
+          
+          # Try to parse JSON response
+          SCORE=$(echo "$AI_RESPONSE" | jq -r '.score // "N/A"' 2>/dev/null)
+          
+          # Fallback: if JSON parsing failed, set defaults
+          if [ "$SCORE" = "N/A" ] || [ -z "$SCORE" ]; then
+            echo "WARNING: Could not parse AI response as JSON, using defaults"
+            SCORE="5"
+            POINTS_FORTS="Analyse non disponible"
+            POINTS_FAIBLES="Erreur de parsing"
+            RECOMMANDATIONS="Vérifier les logs"
+            RESUME="La réponse AI n'a pas pu être parsée correctement"
+          else
+            POINTS_FORTS=$(echo "$AI_RESPONSE" | jq -r '.points_forts[]? // empty' | tr '\n' ';')
+            POINTS_FAIBLES=$(echo "$AI_RESPONSE" | jq -r '.points_faibles[]? // empty' | tr '\n' ';')
+            RECOMMANDATIONS=$(echo "$AI_RESPONSE" | jq -r '.recommandations[]? // empty' | tr '\n' ';')
+            RESUME=$(echo "$AI_RESPONSE" | jq -r '.resume // "Analyse non disponible"')
+          fi
           
           echo "score=$SCORE" >> $GITHUB_OUTPUT
           echo "points_forts=$POINTS_FORTS" >> $GITHUB_OUTPUT
           echo "points_faibles=$POINTS_FAIBLES" >> $GITHUB_OUTPUT
           echo "recommandations=$RECOMMANDATIONS" >> $GITHUB_OUTPUT
           echo "resume=$RESUME" >> $GITHUB_OUTPUT
-          echo "full_response<<EOF" >> $GITHUB_OUTPUT
-          echo "$AI_RESPONSE" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Send AI Analysis to Webhook
         env:

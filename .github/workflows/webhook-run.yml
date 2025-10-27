@@ -9,6 +9,14 @@ on:
       branch_name:
         required: true
         type: string
+      ai_score:
+        required: false
+        type: string
+        default: "0"
+      ai_analysis_html:
+        required: false
+        type: string
+        default: ""
 
 jobs:
   send-kpi:
@@ -43,14 +51,6 @@ jobs:
           echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           echo "created_at=$COMMIT_DATE" >> $GITHUB_OUTPUT
 
-      - name: Run AI Analysis
-        id: ai-analysis
-        uses: ./.github/workflows/run-ai.yml@master
-        with:
-          repo_name: ${{ inputs.repo_name }}
-          branch_name: ${{ inputs.branch_name }}
-          sonar_project_key: ""
-
       - name: Notify backend webhook
         if: always()
         env:
@@ -64,8 +64,8 @@ jobs:
           COMMIT_MESSAGE: ${{ steps.commit-data.outputs.commit_message }}
           COMMIT_BRANCH: ${{ steps.commit-data.outputs.branch_name }}
           COMMIT_DATE: ${{ steps.commit-data.outputs.created_at }}
-          AI_SCORE: ${{ steps.ai-analysis.outputs.score }}
-          AI_ANALYSIS_HTML: ${{ steps.ai-analysis.outputs.analysis_html }}
+          AI_SCORE: ${{ inputs.ai_score }}
+          AI_ANALYSIS_HTML: ${{ inputs.ai_analysis_html }}
         run: |
           TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
@@ -75,8 +75,8 @@ jobs:
           COMMIT_MESSAGE=${COMMIT_MESSAGE:-"No commit message"}
 
           # Escape special characters for JSON
-          COMMIT_MESSAGE_ESCAPED=$(echo "$COMMIT_MESSAGE" | sed 's/"/\\"/g' | sed 's/\\/\\\\/g')
-          AI_ANALYSIS_HTML_ESCAPED=$(echo "$AI_ANALYSIS_HTML" | sed 's/"/\\"/g' | sed 's/\\/\\\\/g')
+          COMMIT_MESSAGE_ESCAPED=$(echo "$COMMIT_MESSAGE" | sed 's/"/\\"/g' | sed 's/\\/\\\\/g' | tr -d '\n' | tr -d '\r')
+          AI_ANALYSIS_HTML_ESCAPED=$(echo "$AI_ANALYSIS_HTML" | sed 's/"/\\"/g' | sed 's/\\/\\\\/g' | tr -d '\n' | tr -d '\r')
 
           PAYLOAD=$(jq -n \
             --arg serverUrl "https://sonarqube.example.com" \

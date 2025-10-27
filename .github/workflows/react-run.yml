@@ -54,4 +54,6 @@ jobs:
     with:
       repo_name: ${{ inputs.repo_name }}
       branch_name: ${{ inputs.branch_name }}
+      ai_score: ${{ needs.ai-analysis.outputs.score }}
+      ai_analysis_html: ${{ needs.ai-analysis.outputs.analysis_html }}
     secrets: inherit

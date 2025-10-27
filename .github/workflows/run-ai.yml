@@ -134,7 +134,7 @@ jobs:
               }
             ],
             "temperature": 0.7,
-            "max_tokens": 2000
+            "max_tokens": 4000
           }
           JSON_EOF
           
@@ -162,25 +162,53 @@ jobs:
           
           # Extract the AI response
           AI_RESPONSE=$(echo "$RESPONSE_BODY" | jq -r '.choices[0].message.content // empty')
+          FINISH_REASON=$(echo "$RESPONSE_BODY" | jq -r '.choices[0].finish_reason // "unknown"')
           
           if [ -z "$AI_RESPONSE" ]; then
             echo "ERROR: No AI response extracted"
+            echo "Full response body:"
+            echo "$RESPONSE_BODY"
             exit 1
           fi
           
           echo "DEBUG: AI Response received (length: ${#AI_RESPONSE})"
+          echo "DEBUG: Finish reason: $FINISH_REASON"
+          
+          # Check if response was truncated
+          if [ "$FINISH_REASON" = "length" ]; then
+            echo "WARNING: Response was truncated due to token limit"
+          fi
           
           # Try to parse JSON response
           SCORE=$(echo "$AI_RESPONSE" | jq -r '.score // "N/A"' 2>/dev/null)
+          ANALYSIS_HTML=$(echo "$AI_RESPONSE" | jq -r '.analysis_html // "N/A"' 2>/dev/null)
           
           # Fallback: if JSON parsing failed, set defaults
           if [ "$SCORE" = "N/A" ] || [ -z "$SCORE" ]; then
             echo "WARNING: Could not parse AI response as JSON, using defaults"
-            SCORE="5"
-            POINTS_FORTS="Analyse non disponible"
-            POINTS_FAIBLES="Erreur de parsing"
-            RECOMMANDATIONS="Vérifier les logs"
-            RESUME="La réponse AI n'a pas pu être parsée correctement"
+            echo "DEBUG: Raw AI response (first 1000 chars):"
+            echo "$AI_RESPONSE" | head -c 1000
+            echo ""
+            echo "DEBUG: Raw AI response (last 1000 chars):"
+            echo "$AI_RESPONSE" | tail -c 1000
+            echo ""
+            
+            # Try to extract score from partial response using regex as fallback
+            EXTRACTED_SCORE=$(echo "$AI_RESPONSE" | grep -o '"score"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]*' | head -1)
+            if [ -n "$EXTRACTED_SCORE" ] && [ "$EXTRACTED_SCORE" -ge 0 ] && [ "$EXTRACTED_SCORE" -le 10 ]; then
+              echo "DEBUG: Extracted score from partial response: $EXTRACTED_SCORE"
+              SCORE="$EXTRACTED_SCORE"
+            else
+              SCORE="5"
+            fi
+            
+            # Create fallback analysis HTML
+            ANALYSIS_HTML="<div class='ai-analysis-report' style='font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; border-radius: 8px;'><div class='analysis-header' style='margin-bottom: 20px; text-align: center;'><h2 style='color: #333;'>🤖 Rapport d'Analyse IA</h2><div class='score-badge' style='display: inline-block; background: #007bff; color: white; padding: 10px 20px; border-radius: 5px; font-size: 18px; font-weight: bold;'>Score: $SCORE/10</div></div><div class='analysis-section' style='margin: 20px 0; background: white; padding: 15px; border-radius: 5px;'><h3 style='color: #dc3545; border-bottom: 2px solid #dc3545; padding-bottom: 10px;'>⚠️ Erreur</h3><p style='color: #555;'>La réponse AI a été tronquée ou n'a pas pu être parsée correctement.</p></div></div>"
+            
+            POINTS_FORTS="Analyse partiellement disponible"
+            POINTS_FAIBLES="Réponse tronquée ou erreur de parsing"
+            RECOMMANDATIONS="Augmenter la limite de tokens ou vérifier les logs"
+            RESUME="La réponse AI a été tronquée ou n'a pas pu être parsée correctement. Score estimé: $SCORE/10"
           else
             POINTS_FORTS=$(echo "$AI_RESPONSE" | jq -r '.points_forts[]? // empty' | tr '\n' ';')
             POINTS_FAIBLES=$(echo "$AI_RESPONSE" | jq -r '.points_faibles[]? // empty' | tr '\n' ';')
@@ -193,76 +221,9 @@ jobs:
           echo "points_faibles=$POINTS_FAIBLES" >> $GITHUB_OUTPUT
           echo "recommandations=$RECOMMANDATIONS" >> $GITHUB_OUTPUT
           echo "resume=$RESUME" >> $GITHUB_OUTPUT
-
-      - name: Send AI Analysis to Webhook
-        env:
-          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
-          REPO_NAME: ${{ inputs.repo_name }}
-          BRANCH_NAME: ${{ inputs.branch_name }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_NUMBER: ${{ github.run_number }}
-          SHA: ${{ github.sha }}
-          AI_SCORE: ${{ steps.ai-analysis.outputs.score }}
-          AI_POINTS_FORTS: ${{ steps.ai-analysis.outputs.points_forts }}
-          AI_POINTS_FAIBLES: ${{ steps.ai-analysis.outputs.points_faibles }}
-          AI_RECOMMANDATIONS: ${{ steps.ai-analysis.outputs.recommandations }}
-          AI_RESUME: ${{ steps.ai-analysis.outputs.resume }}
-        run: |
-          TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-          PAYLOAD=$(jq -n \
-            --arg repoName "$REPO_NAME" \
-            --arg branchName "$BRANCH_NAME" \
-            --arg runId "$RUN_ID" \
-            --arg runNumber "$RUN_NUMBER" \
-            --arg sha "$SHA" \
-            --arg timestamp "$TS" \
-            --arg score "$AI_SCORE" \
-            --arg pointsForts "$AI_POINTS_FORTS" \
-            --arg pointsFaibles "$AI_POINTS_FAIBLES" \
-            --arg recommandations "$AI_RECOMMANDATIONS" \
-            --arg resume "$AI_RESUME" \
-            '{
-              type: "ai_analysis",
-              repository: {
-                name: $repoName,
-                branch: $branchName,
-                commit: $sha
-              },
-              pipeline: {
-                run_id: $runId,
-                run_number: $runNumber,
-                timestamp: $timestamp
-              },
-              ai_analysis: {
-                score: ($score | tonumber? // 0),
-                points_forts: ($pointsForts | split(";") | map(select(. != ""))),
-                points_faibles: ($pointsFaibles | split(";") | map(select(. != ""))),
-                recommandations: ($recommandations | split(";") | map(select(. != ""))),
-                resume: $resume
-              }
-            }')
-
-          ATTEMPTS=0; MAX=3; S=2
-          until [ $ATTEMPTS -ge $MAX ]; do
-            CODE=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" -X POST "$WEBHOOK_URL" \
-              -H "Content-Type: application/json" \
-              --data "$PAYLOAD" || echo "000")
-
-            if [ "$CODE" = "200" ] || [ "$CODE" = "201" ] || [ "$CODE" = "204" ]; then
-              echo "AI Analysis webhook sent successfully (HTTP $CODE)"
-              cat /tmp/resp.txt || true
-              exit 0
-            fi
-            echo "AI Analysis webhook failed (HTTP $CODE)"
-            cat /tmp/resp.txt || true
-            ATTEMPTS=$((ATTEMPTS+1))
-            echo "Retry $ATTEMPTS/$MAX in ${S}s…"
-            sleep $S
-            S=$((S*2))
-          done
-
-          echo "⚠ AI Analysis webhook not delivered after $MAX attempts (non-blocking)."
+          echo "analysis_html<<EOF" >> $GITHUB_OUTPUT
+          echo "$ANALYSIS_HTML" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Display AI Analysis Results
         run: |
@@ -280,3 +241,8 @@ jobs:
           echo ""
           echo "Résumé:"
           echo "${{ steps.ai-analysis.outputs.resume }}"
+          echo ""
+          echo "=== RAPPORT HTML COMPLET ==="
+          echo "${{ steps.ai-analysis.outputs.analysis_html }}"
+          echo ""
+          echo "=== FIN DU RAPPORT ==="

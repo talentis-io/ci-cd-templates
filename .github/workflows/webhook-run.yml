@@ -11,7 +11,22 @@ on:
         type: string
 
 jobs:
+  ai-analysis:
+    runs-on: ubuntu-latest
+    outputs:
+      score: ${{ steps.ai-analysis.outputs.score }}
+      analysis_html: ${{ steps.ai-analysis.outputs.analysis_html }}
+    steps:
+      - name: Run AI Analysis
+        id: ai-analysis
+        uses: ./.github/workflows/run-ai.yml@master
+        with:
+          repo_name: ${{ inputs.repo_name }}
+          branch_name: ${{ inputs.branch_name }}
+          sonar_project_key: ""
+
   send-kpi:
+    needs: ai-analysis
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -42,14 +57,6 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
           echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           echo "created_at=$COMMIT_DATE" >> $GITHUB_OUTPUT
-
-      - name: Run AI Analysis
-        id: ai-analysis
-        uses: ./.github/workflows/run-ai.yml
-        with:
-          repo_name: ${{ inputs.repo_name }}
-          branch_name: ${{ inputs.branch_name }}
-          sonar_project_key: ""
       - name: Notify backend webhook
         if: always()
         env:
@@ -63,14 +70,19 @@ jobs:
           COMMIT_MESSAGE: ${{ steps.commit-data.outputs.commit_message }}
           COMMIT_BRANCH: ${{ steps.commit-data.outputs.branch_name }}
           COMMIT_DATE: ${{ steps.commit-data.outputs.created_at }}
-          AI_SCORE: ${{ steps.ai-analysis.outputs.score }}
-          AI_ANALYSIS_HTML: ${{ steps.ai-analysis.outputs.analysis_html }}
-          AI_POINTS_FORTS: ${{ steps.ai-analysis.outputs.points_forts }}
-          AI_POINTS_FAIBLES: ${{ steps.ai-analysis.outputs.points_faibles }}
-          AI_RECOMMANDATIONS: ${{ steps.ai-analysis.outputs.recommandations }}
-          AI_RESUME: ${{ steps.ai-analysis.outputs.resume }}
+          AI_SCORE: ${{ needs.ai-analysis.outputs.score }}
+          AI_ANALYSIS_HTML: ${{ needs.ai-analysis.outputs.analysis_html }}
         run: |
           TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          # Handle empty or null values with defaults
+          AI_SCORE=${AI_SCORE:-"0"}
+          AI_ANALYSIS_HTML=${AI_ANALYSIS_HTML:-""}
+          COMMIT_MESSAGE=${COMMIT_MESSAGE:-"No commit message"}
+
+          # Escape special characters for JSON
+          COMMIT_MESSAGE_ESCAPED=$(echo "$COMMIT_MESSAGE" | sed 's/"/\\"/g' | sed 's/\\/\\\\/g')
+          AI_ANALYSIS_HTML_ESCAPED=$(echo "$AI_ANALYSIS_HTML" | sed 's/"/\\"/g' | sed 's/\\/\\\\/g')
 
           PAYLOAD=$(jq -n \
             --arg serverUrl "https://sonarqube.example.com" \
@@ -83,15 +95,11 @@ jobs:
             --arg run_id "$RUN_ID" \
             --arg run_number "$RUN_NUMBER" \
             --arg commitHash "$COMMIT_HASH" \
-            --arg commitMessage "$COMMIT_MESSAGE" \
+            --arg commitMessage "$COMMIT_MESSAGE_ESCAPED" \
             --arg commitBranch "$COMMIT_BRANCH" \
             --arg commitDate "$COMMIT_DATE" \
             --arg aiScore "$AI_SCORE" \
-            --arg aiAnalysisHtml "$AI_ANALYSIS_HTML" \
-            --arg aiPointsForts "$AI_POINTS_FORTS" \
-            --arg aiPointsFaibles "$AI_POINTS_FAIBLES" \
-            --arg aiRecommandations "$AI_RECOMMANDATIONS" \
-            --arg aiResume "$AI_RESUME" \
+            --arg aiAnalysisHtml "$AI_ANALYSIS_HTML_ESCAPED" \
             '{
               serverUrl: $serverUrl,
               taskId: $taskId,
@@ -126,11 +134,7 @@ jobs:
               },
               aiAnalysis: {
                 score: ($aiScore | tonumber),
-                analysisHtml: $aiAnalysisHtml,
-                pointsForts: $aiPointsForts,
-                pointsFaibles: $aiPointsFaibles,
-                recommandations: $aiRecommandations,
-                resume: $aiResume
+                analysisHtml: $aiAnalysisHtml
               }
             }')
 

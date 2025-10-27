@@ -109,12 +109,12 @@ jobs:
 
           Réponds UNIQUEMENT au format JSON suivant avec l'analyse au format HTML:
           {
-            "score": [score de 0 à 10],
-            "analysis_html": "<div class='ai-analysis-report' style='font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; border-radius: 8px;'><div class='analysis-header' style='margin-bottom: 20px; text-align: center;'><h2 style='color: #333;'>🤖 Rapport d'Analyse IA</h2><div class='score-badge' style='display: inline-block; background: #007bff; color: white; padding: 10px 20px; border-radius: 5px; font-size: 18px; font-weight: bold;'>Score: [SCORE]/10</div></div><div class='analysis-section' style='margin: 20px 0; background: white; padding: 15px; border-radius: 5px;'><h3 style='color: #28a745; border-bottom: 2px solid #28a745; padding-bottom: 10px;'>💪 Points Forts</h3><ul style='list-style-type: none; padding: 10px 0;'>[POINTS_FORTS_LIST]</ul></div><div class='analysis-section' style='margin: 20px 0; background: white; padding: 15px; border-radius: 5px;'><h3 style='color: #dc3545; border-bottom: 2px solid #dc3545; padding-bottom: 10px;'>⚠️ Points Faibles</h3><ul style='list-style-type: none; padding: 10px 0;'>[POINTS_FAIBLES_LIST]</ul></div><div class='analysis-section' style='margin: 20px 0; background: white; padding: 15px; border-radius: 5px;'><h3 style='color: #ffc107; border-bottom: 2px solid #ffc107; padding-bottom: 10px;'>✅ Recommandations</h3><ul style='list-style-type: none; padding: 10px 0;'>[RECOMMANDATIONS_LIST]</ul></div><div class='analysis-section' style='margin: 20px 0; background: white; padding: 15px; border-radius: 5px;'><h3 style='color: #17a2b8; border-bottom: 2px solid #17a2b8; padding-bottom: 10px;'>📝 Résumé</h3><div class='resume-text' style='color: #555; line-height: 1.6;'>[RESUME]</div></div></div>"
+            "score": [score de 0 à 100],
+            "analysis_html": "<div class='ai-analysis-report' style='font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; border-radius: 8px;'><div class='analysis-header' style='margin-bottom: 20px; text-align: center;'><h2 style='color: #333;'>🤖 Rapport d'Analyse IA</h2><div class='score-badge' style='display: inline-block; background: #007bff; color: white; padding: 10px 20px; border-radius: 5px; font-size: 18px; font-weight: bold;'>Score: [SCORE]/100</div></div><div class='analysis-section' style='margin: 20px 0; background: white; padding: 15px; border-radius: 5px;'><h3 style='color: #28a745; border-bottom: 2px solid #28a745; padding-bottom: 10px;'>💪 Points Forts</h3><ul style='list-style-type: none; padding: 10px 0;'>[POINTS_FORTS_LIST]</ul></div><div class='analysis-section' style='margin: 20px 0; background: white; padding: 15px; border-radius: 5px;'><h3 style='color: #dc3545; border-bottom: 2px solid #dc3545; padding-bottom: 10px;'>⚠️ Points Faibles</h3><ul style='list-style-type: none; padding: 10px 0;'>[POINTS_FAIBLES_LIST]</ul></div><div class='analysis-section' style='margin: 20px 0; background: white; padding: 15px; border-radius: 5px;'><h3 style='color: #ffc107; border-bottom: 2px solid #ffc107; padding-bottom: 10px;'>✅ Recommandations</h3><ul style='list-style-type: none; padding: 10px 0;'>[RECOMMANDATIONS_LIST]</ul></div><div class='analysis-section' style='margin: 20px 0; background: white; padding: 15px; border-radius: 5px;'><h3 style='color: #17a2b8; border-bottom: 2px solid #17a2b8; padding-bottom: 10px;'>📝 Résumé</h3><div class='resume-text' style='color: #555; line-height: 1.6;'>[RESUME]</div></div></div>"
           }
 
           Où:
-          - [SCORE] = score de 0 à 10
+          - [SCORE] = score de 0 à 100
           - [POINTS_FORTS_LIST] = liste HTML des points forts au format: <li style='padding: 8px 0; color: #333;'>✓ Point fort 1</li><li style='padding: 8px 0; color: #333;'>✓ Point fort 2</li>...
           - [POINTS_FAIBLES_LIST] = liste HTML des points faibles au format: <li style='padding: 8px 0; color: #333;'>✗ Point faible 1</li><li style='padding: 8px 0; color: #333;'>✗ Point faible 2</li>...
           - [RECOMMANDATIONS_LIST] = liste HTML des recommandations au format: <li style='padding: 8px 0; color: #333;'>→ Recommandation 1</li><li style='padding: 8px 0; color: #333;'>→ Recommandation 2</li>...
@@ -195,20 +195,20 @@ jobs:
             
             # Try to extract score from partial response using regex as fallback
             EXTRACTED_SCORE=$(echo "$AI_RESPONSE" | grep -o '"score"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]*' | head -1)
-            if [ -n "$EXTRACTED_SCORE" ] && [ "$EXTRACTED_SCORE" -ge 0 ] && [ "$EXTRACTED_SCORE" -le 10 ]; then
+            if [ -n "$EXTRACTED_SCORE" ] && [ "$EXTRACTED_SCORE" -ge 0 ] && [ "$EXTRACTED_SCORE" -le 100 ]; then
               echo "DEBUG: Extracted score from partial response: $EXTRACTED_SCORE"
               SCORE="$EXTRACTED_SCORE"
             else
-              SCORE="5"
+              SCORE="50"
             fi
             
             # Create fallback analysis HTML
-            ANALYSIS_HTML="<div class='ai-analysis-report' style='font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; border-radius: 8px;'><div class='analysis-header' style='margin-bottom: 20px; text-align: center;'><h2 style='color: #333;'>🤖 Rapport d'Analyse IA</h2><div class='score-badge' style='display: inline-block; background: #007bff; color: white; padding: 10px 20px; border-radius: 5px; font-size: 18px; font-weight: bold;'>Score: $SCORE/10</div></div><div class='analysis-section' style='margin: 20px 0; background: white; padding: 15px; border-radius: 5px;'><h3 style='color: #dc3545; border-bottom: 2px solid #dc3545; padding-bottom: 10px;'>⚠️ Erreur</h3><p style='color: #555;'>La réponse AI a été tronquée ou n'a pas pu être parsée correctement.</p></div></div>"
+            ANALYSIS_HTML="<div class='ai-analysis-report' style='font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; border-radius: 8px;'><div class='analysis-header' style='margin-bottom: 20px; text-align: center;'><h2 style='color: #333;'>🤖 Rapport d'Analyse IA</h2><div class='score-badge' style='display: inline-block; background: #007bff; color: white; padding: 10px 20px; border-radius: 5px; font-size: 18px; font-weight: bold;'>Score: $SCORE/100</div></div><div class='analysis-section' style='margin: 20px 0; background: white; padding: 15px; border-radius: 5px;'><h3 style='color: #dc3545; border-bottom: 2px solid #dc3545; padding-bottom: 10px;'>⚠️ Erreur</h3><p style='color: #555;'>La réponse AI a été tronquée ou n'a pas pu être parsée correctement.</p></div></div>"
             
             POINTS_FORTS="Analyse partiellement disponible"
             POINTS_FAIBLES="Réponse tronquée ou erreur de parsing"
             RECOMMANDATIONS="Augmenter la limite de tokens ou vérifier les logs"
-            RESUME="La réponse AI a été tronquée ou n'a pas pu être parsée correctement. Score estimé: $SCORE/10"
+            RESUME="La réponse AI a été tronquée ou n'a pas pu être parsée correctement. Score estimé: $SCORE/100"
           else
             POINTS_FORTS=$(echo "$AI_RESPONSE" | jq -r '.points_forts[]? // empty' | tr '\n' ';')
             POINTS_FAIBLES=$(echo "$AI_RESPONSE" | jq -r '.points_faibles[]? // empty' | tr '\n' ';')
@@ -228,19 +228,7 @@ jobs:
       - name: Display AI Analysis Results
         run: |
           echo "=== RÉSULTATS DE L'ANALYSE IA ==="
-          echo "Score: ${{ steps.ai-analysis.outputs.score }}/10"
-          echo ""
-          echo "Points forts:"
-          echo "${{ steps.ai-analysis.outputs.points_forts }}" | tr ';' '\n' | sed 's/^/- /'
-          echo ""
-          echo "Points faibles:"
-          echo "${{ steps.ai-analysis.outputs.points_faibles }}" | tr ';' '\n' | sed 's/^/- /'
-          echo ""
-          echo "Recommandations:"
-          echo "${{ steps.ai-analysis.outputs.recommandations }}" | tr ';' '\n' | sed 's/^/- /'
-          echo ""
-          echo "Résumé:"
-          echo "${{ steps.ai-analysis.outputs.resume }}"
+          echo "Score: ${{ steps.ai-analysis.outputs.score }}/100"
           echo ""
           echo "=== RAPPORT HTML COMPLET ==="
           echo "${{ steps.ai-analysis.outputs.analysis_html }}"

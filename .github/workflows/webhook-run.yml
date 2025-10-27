@@ -14,6 +14,42 @@ jobs:
   send-kpi:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/${{ inputs.repo_name }}
+          ref: ${{ inputs.branch_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get commit data
+        id: commit-data
+        run: |
+          # Get commit hash
+          COMMIT_HASH=$(git rev-parse HEAD)
+          
+          # Get commit message
+          COMMIT_MESSAGE=$(git log -1 --pretty=format:"%s")
+          
+          # Get branch name
+          BRANCH_NAME="${{ inputs.branch_name }}"
+          
+          # Get commit date
+          COMMIT_DATE=$(git log -1 --pretty=format:"%cI")
+          
+          echo "commit_hash=$COMMIT_HASH" >> $GITHUB_OUTPUT
+          echo "commit_message<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMIT_MESSAGE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "created_at=$COMMIT_DATE" >> $GITHUB_OUTPUT
+
+      - name: Run AI Analysis
+        id: ai-analysis
+        uses: ./.github/workflows/run-ai.yml
+        with:
+          repo_name: ${{ inputs.repo_name }}
+          branch_name: ${{ inputs.branch_name }}
+          sonar_project_key: ""
       - name: Notify backend webhook
         if: always()
         env:
@@ -23,6 +59,16 @@ jobs:
           RUN_ID: ${{ github.run_id }}
           RUN_NUMBER: ${{ github.run_number }}
           SHA: ${{ github.sha }}
+          COMMIT_HASH: ${{ steps.commit-data.outputs.commit_hash }}
+          COMMIT_MESSAGE: ${{ steps.commit-data.outputs.commit_message }}
+          COMMIT_BRANCH: ${{ steps.commit-data.outputs.branch_name }}
+          COMMIT_DATE: ${{ steps.commit-data.outputs.created_at }}
+          AI_SCORE: ${{ steps.ai-analysis.outputs.score }}
+          AI_ANALYSIS_HTML: ${{ steps.ai-analysis.outputs.analysis_html }}
+          AI_POINTS_FORTS: ${{ steps.ai-analysis.outputs.points_forts }}
+          AI_POINTS_FAIBLES: ${{ steps.ai-analysis.outputs.points_faibles }}
+          AI_RECOMMANDATIONS: ${{ steps.ai-analysis.outputs.recommandations }}
+          AI_RESUME: ${{ steps.ai-analysis.outputs.resume }}
         run: |
           TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
@@ -36,6 +82,16 @@ jobs:
             --arg sha "$SHA" \
             --arg run_id "$RUN_ID" \
             --arg run_number "$RUN_NUMBER" \
+            --arg commitHash "$COMMIT_HASH" \
+            --arg commitMessage "$COMMIT_MESSAGE" \
+            --arg commitBranch "$COMMIT_BRANCH" \
+            --arg commitDate "$COMMIT_DATE" \
+            --arg aiScore "$AI_SCORE" \
+            --arg aiAnalysisHtml "$AI_ANALYSIS_HTML" \
+            --arg aiPointsForts "$AI_POINTS_FORTS" \
+            --arg aiPointsFaibles "$AI_POINTS_FAIBLES" \
+            --arg aiRecommandations "$AI_RECOMMANDATIONS" \
+            --arg aiResume "$AI_RESUME" \
             '{
               serverUrl: $serverUrl,
               taskId: $taskId,
@@ -61,8 +117,26 @@ jobs:
                 status: "OK",
                 conditions: []
               },
-              measures: []
+              measures: [],
+              commit: {
+                commitHash: $commitHash,
+                commitMessage: $commitMessage,
+                branchName: $commitBranch,
+                createdAt: $commitDate
+              },
+              aiAnalysis: {
+                score: ($aiScore | tonumber),
+                analysisHtml: $aiAnalysisHtml,
+                pointsForts: $aiPointsForts,
+                pointsFaibles: $aiPointsFaibles,
+                recommandations: $aiRecommandations,
+                resume: $aiResume
+              }
             }')
+
+          echo "=== WEBHOOK PAYLOAD ==="
+          echo "$PAYLOAD" | jq .
+          echo "=== END WEBHOOK PAYLOAD ==="
 
           ATTEMPTS=0; MAX=3; S=2
           until [ $ATTEMPTS -ge $MAX ]; do

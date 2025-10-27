@@ -46,10 +46,6 @@ jobs:
         if: ${{ inputs.build_command == 'npm install' || startsWith(inputs.build_command, 'npm') || startsWith(inputs.build_command, 'yarn') }}
         run: npm ci || yarn install --frozen-lockfile
 
-      # Build project
-      - name: Build project
-        run: ${{ inputs.build_command }}
-
       # Ensure SonarCloud project exists
       - name: Ensure SonarCloud project exists
         run: |

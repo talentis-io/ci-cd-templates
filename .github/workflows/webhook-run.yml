@@ -111,7 +111,7 @@ jobs:
               analysis: {
                 analysisId: $run_id,
                 date: (now | todateiso8601),
-                buildString: ("gha-build-" + $run_number),
+                buildString: ("build-" + $run_number),
                 revision: $sha
               },
               qualityGate: {

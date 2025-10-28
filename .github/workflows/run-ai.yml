@@ -189,9 +189,11 @@ jobs:
             echo "WARNING: Response was truncated due to token limit"
           fi
           
-          # Try to parse JSON response
+          # Try to parse JSON response - USE -r flag to get raw string without extra escaping
           SCORE=$(echo "$AI_RESPONSE" | jq -r '.score // "N/A"' 2>/dev/null)
-          ANALYSIS_HTML=$(echo "$AI_RESPONSE" | jq -r '.analysis_html // "N/A"' 2>/dev/null)
+          # CRITICAL CHANGE: Save HTML to file first to avoid shell escaping issues
+          echo "$AI_RESPONSE" | jq -r '.analysis_html // "N/A"' 2>/dev/null > /tmp/analysis_html.txt
+          ANALYSIS_HTML=$(cat /tmp/analysis_html.txt)
           
           # Fallback: if JSON parsing failed, set defaults
           if [ "$SCORE" = "N/A" ] || [ -z "$SCORE" ]; then
@@ -199,21 +201,15 @@ jobs:
             echo "DEBUG: Raw AI response (first 1000 chars):"
             echo "$AI_RESPONSE" | head -c 1000
             echo ""
-            echo "DEBUG: Raw AI response (last 1000 chars):"
-            echo "$AI_RESPONSE" | tail -c 1000
-            echo ""
             
-            # Try to extract score from partial response using regex as fallback
             EXTRACTED_SCORE=$(echo "$AI_RESPONSE" | grep -o '"score"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]*' | head -1)
             if [ -n "$EXTRACTED_SCORE" ] && [ "$EXTRACTED_SCORE" -ge 0 ] && [ "$EXTRACTED_SCORE" -le 100 ]; then
-              echo "DEBUG: Extracted score from partial response: $EXTRACTED_SCORE"
               SCORE="$EXTRACTED_SCORE"
             else
               SCORE="50"
             fi
             
-            # Create fallback analysis HTML
-            ANALYSIS_HTML="<div class=\"space-y-1\"><p class=\"text-vibrant-orange font-semibold\">Points faibles:</p><div class=\"pl-4 space-y-0.5\"><p class=\"text-sm text-cool-gray\">La réponse AI a été tronquée ou n'a pas pu être parsée correctement</p><p class=\"text-sm text-cool-gray\">Veuillez réessayer l'analyse</p></div></div>"
+            ANALYSIS_HTML='<div class="space-y-1"><p class="text-vibrant-orange font-semibold">Points faibles:</p><div class="pl-4 space-y-0.5"><p class="text-sm text-cool-gray">La réponse AI a été tronquée ou n'\''a pas pu être parsée correctement</p></div></div>'
           fi
           
           echo "score=$SCORE" >> $GITHUB_OUTPUT

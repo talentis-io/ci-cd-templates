@@ -74,9 +74,9 @@ jobs:
           AI_ANALYSIS_HTML=${AI_ANALYSIS_HTML:-""}
           COMMIT_MESSAGE=${COMMIT_MESSAGE:-"No commit message"}
 
-          # Escape special characters for JSON
-          COMMIT_MESSAGE_ESCAPED=$(echo "$COMMIT_MESSAGE" | sed 's/"/\\"/g' | sed 's/\\/\\\\/g' | tr -d '\n' | tr -d '\r')
-          AI_ANALYSIS_HTML_ESCAPED=$(echo "$AI_ANALYSIS_HTML" | sed 's/"/\\"/g' | sed 's/\\/\\\\/g' | tr -d '\n' | tr -d '\r')
+          # Clean up newlines but let jq handle all JSON escaping
+          COMMIT_MESSAGE_CLEAN=$(echo "$COMMIT_MESSAGE" | tr -d '\n' | tr -d '\r')
+          AI_ANALYSIS_HTML_CLEAN=$(echo "$AI_ANALYSIS_HTML" | tr -d '\n' | tr -d '\r')
 
           PAYLOAD=$(jq -n \
             --arg serverUrl "https://sonarqube.example.com" \
@@ -89,11 +89,11 @@ jobs:
             --arg run_id "$RUN_ID" \
             --arg run_number "$RUN_NUMBER" \
             --arg commitHash "$COMMIT_HASH" \
-            --arg commitMessage "$COMMIT_MESSAGE_ESCAPED" \
+            --arg commitMessage "$COMMIT_MESSAGE_CLEAN" \
             --arg commitBranch "$COMMIT_BRANCH" \
             --arg commitDate "$COMMIT_DATE" \
             --arg aiScore "$AI_SCORE" \
-            --arg aiAnalysisHtml "$AI_ANALYSIS_HTML_ESCAPED" \
+            --arg aiAnalysisHtml "$AI_ANALYSIS_HTML_CLEAN" \
             '{
               serverUrl: $serverUrl,
               taskId: $taskId,

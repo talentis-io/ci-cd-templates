@@ -105,30 +105,30 @@ jobs:
           # Prepare the prompt for AI analysis
           cat > /tmp/prompt.txt << 'PROMPT_EOF'
           Tu es un expert en analyse de code et qualité logicielle. Analyse le projet suivant basé sur les métriques SonarCloud et génère un rapport complet en français.
-
+      
           INFORMATIONS DU PROJET:
           - Nom du projet: ${{ inputs.repo_name }}
           - Branche: ${{ inputs.branch_name }}
-
+      
           MÉTRIQUES SONARCLOUD:
           - Bugs: ${{ steps.sonar-metrics.outputs.bugs }}
           - Vulnérabilités: ${{ steps.sonar-metrics.outputs.vulnerabilities }}
           - Code smells: ${{ steps.sonar-metrics.outputs.code_smells }}
           - Couverture de code: ${{ steps.sonar-metrics.outputs.coverage }}%
           - Lignes de code: ${{ steps.sonar-metrics.outputs.lines_of_code }}
-
-          Réponds UNIQUEMENT au format JSON suivant avec l'analyse au format HTML:
+      
+          Réponds UNIQUEMENT au format JSON suivant avec l'analyse au format HTML simple (sans styles inline):
           {
             "score": [score de 0 à 100],
-            "analysis_html": "<div class='ai-analysis-report' style='font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; border-radius: 8px;'><div class='analysis-header' style='margin-bottom: 20px; text-align: center;'><h2 style='color: #333;'>🤖 Rapport d'Analyse IA</h2><div class='score-badge' style='display: inline-block; background: #007bff; color: white; padding: 10px 20px; border-radius: 5px; font-size: 18px; font-weight: bold;'>Score: [SCORE]/100</div></div><div class='analysis-section' style='margin: 20px 0; background: white; padding: 15px; border-radius: 5px;'><h3 style='color: #28a745; border-bottom: 2px solid #28a745; padding-bottom: 10px;'>💪 Points Forts</h3><ul style='list-style-type: none; padding: 10px 0;'>[POINTS_FORTS_LIST]</ul></div><div class='analysis-section' style='margin: 20px 0; background: white; padding: 15px; border-radius: 5px;'><h3 style='color: #dc3545; border-bottom: 2px solid #dc3545; padding-bottom: 10px;'>⚠️ Points Faibles</h3><ul style='list-style-type: none; padding: 10px 0;'>[POINTS_FAIBLES_LIST]</ul></div><div class='analysis-section' style='margin: 20px 0; background: white; padding: 15px; border-radius: 5px;'><h3 style='color: #ffc107; border-bottom: 2px solid #ffc107; padding-bottom: 10px;'>✅ Recommandations</h3><ul style='list-style-type: none; padding: 10px 0;'>[RECOMMANDATIONS_LIST]</ul></div><div class='analysis-section' style='margin: 20px 0; background: white; padding: 15px; border-radius: 5px;'><h3 style='color: #17a2b8; border-bottom: 2px solid #17a2b8; padding-bottom: 10px;'>📝 Résumé</h3><div class='resume-text' style='color: #555; line-height: 1.6;'>[RESUME]</div></div></div>"
+            "analysis_html": "<div class=\"space-y-1\"><p class=\"text-electric-teal font-semibold\">Points forts:</p><div class=\"pl-4 space-y-0.5\"><p class=\"text-sm text-cool-gray\">Point fort 1</p><p class=\"text-sm text-cool-gray\">Point fort 2</p><p class=\"text-sm text-cool-gray\">Point fort 3</p></div></div><div class=\"space-y-1\"><p class=\"text-vibrant-orange font-semibold\">Points faibles:</p><div class=\"pl-4 space-y-0.5\"><p class=\"text-sm text-cool-gray\">Point faible 1</p><p class=\"text-sm text-cool-gray\">Point faible 2</p><p class=\"text-sm text-cool-gray\">Point faible 3</p></div></div><div class=\"space-y-1\"><p class=\"text-deep-blue font-semibold\">Recommandations:</p><div class=\"pl-4 space-y-0.5\"><p class=\"text-sm text-cool-gray\">Recommandation 1</p><p class=\"text-sm text-cool-gray\">Recommandation 2</p><p class=\"text-sm text-cool-gray\">Recommandation 3</p></div></div>"
           }
-
-          Où:
-          - [SCORE] = score de 0 à 100
-          - [POINTS_FORTS_LIST] = liste HTML des points forts au format: <li style='padding: 8px 0; color: #333;'>✓ Point fort 1</li><li style='padding: 8px 0; color: #333;'>✓ Point fort 2</li>...
-          - [POINTS_FAIBLES_LIST] = liste HTML des points faibles au format: <li style='padding: 8px 0; color: #333;'>✗ Point faible 1</li><li style='padding: 8px 0; color: #333;'>✗ Point faible 2</li>...
-          - [RECOMMANDATIONS_LIST] = liste HTML des recommandations au format: <li style='padding: 8px 0; color: #333;'>→ Recommandation 1</li><li style='padding: 8px 0; color: #333;'>→ Recommandation 2</li>...
-          - [RESUME] = résumé général de l'analyse en texte brut
+      
+          IMPORTANT:
+          - Utilise UNIQUEMENT les classes CSS suivantes: space-y-1, text-electric-teal, text-vibrant-orange, text-deep-blue, font-semibold, pl-4, space-y-0.5, text-sm, text-cool-gray
+          - NE mets PAS de styles inline (pas de style="...")
+          - Génère 3-5 points pour chaque section (Points forts, Points faibles, Recommandations)
+          - Base ton analyse sur les métriques SonarCloud fournies
+          - Retourne UNIQUEMENT le JSON, sans texte supplémentaire ni markdown
           PROMPT_EOF
           
           PROMPT=$(cat /tmp/prompt.txt)

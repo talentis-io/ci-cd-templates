@@ -20,6 +20,9 @@ on:
       analysis_html:
         description: "AI analysis HTML report"
         value: ${{ jobs.ai-analysis.outputs.analysis_html }}
+      percentage_advancement:
+        description: "Percentage of advancement based on test document"
+        value: ${{ jobs.ai-analysis.outputs.percentage_advancement }}
 
 jobs:
   ai-analysis:
@@ -27,6 +30,7 @@ jobs:
     outputs:
       score: ${{ steps.ai-analysis.outputs.score }}
       analysis_html: ${{ steps.ai-analysis.outputs.analysis_html }}
+      percentage_advancement: ${{ steps.ai-analysis.outputs.percentage_advancement }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -95,6 +99,49 @@ jobs:
           echo "$README_CONTENT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
+      - name: Get test attachment document
+        id: test-attachment
+        env:
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          REPO_NAME: ${{ inputs.repo_name }}
+        run: |
+          # Call the webhook API to get test attachment text
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "WARNING: WEBHOOK_URL not set, skipping test attachment retrieval"
+            echo "document_text=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Extract base URL (remove trailing /webhook/sonar if present)
+          BASE_URL=$(echo "$WEBHOOK_URL" | sed 's|/webhook/sonar$||' | sed 's|/webhook$||' | sed 's|/$||')
+          
+          # Call the test attachment endpoint
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "${BASE_URL}/webhook/test-attachment/${REPO_NAME}")
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          RESPONSE_BODY=$(echo "$RESPONSE" | sed '$d')
+          
+          echo "DEBUG: Test attachment HTTP Status: $HTTP_CODE"
+          
+          if [ "$HTTP_CODE" = "200" ]; then
+            # Extract textContent from response
+            TEXT_CONTENT=$(echo "$RESPONSE_BODY" | jq -r '.textContent // ""')
+            
+            if [ -n "$TEXT_CONTENT" ] && [ "$TEXT_CONTENT" != "null" ]; then
+              echo "DEBUG: Successfully retrieved test attachment document"
+              echo "document_text<<EOF" >> $GITHUB_OUTPUT
+              echo "$TEXT_CONTENT" >> $GITHUB_OUTPUT
+              echo "EOF" >> $GITHUB_OUTPUT
+            else
+              echo "WARNING: Empty textContent in response"
+              echo "document_text=" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "WARNING: Failed to retrieve test attachment (HTTP $HTTP_CODE)"
+            echo "Response: $RESPONSE_BODY"
+            echo "document_text=" >> $GITHUB_OUTPUT
+          fi
+
       - name: Generate AI Analysis
         id: ai-analysis
         env:
@@ -103,12 +150,31 @@ jobs:
           OLLAMA_MODEL: ${{ secrets.OLLAMA_MODEL || 'gpt-oss:120b' }}
         run: |
           # Prepare the prompt for AI analysis
-          cat > /tmp/prompt.txt << 'PROMPT_EOF'
-          Tu es un expert en analyse de code et qualité logicielle. Analyse le projet suivant basé sur les métriques SonarCloud et génère un rapport complet en français.
+          DOCUMENT_TEXT="${{ steps.test-attachment.outputs.document_text }}"
+          
+          # Check if document text exists
+          if [ -n "$DOCUMENT_TEXT" ] && [ "$DOCUMENT_TEXT" != "" ]; then
+            DOCUMENT_SECTION="DOCUMENT DE TEST DU CANDIDAT:
+          Ce document contient les instructions et le contexte du test à réaliser. Utilise-le pour évaluer l'avancement et la pertinence de la solution implémentée.
+          
+          $DOCUMENT_TEXT
+          
+          BASÉ SUR CE DOCUMENT, tu dois:
+          1. Calculer un pourcentage d'avancement (0-100%) indiquant dans quelle mesure le candidat a réalisé les objectifs du test
+          2. Évaluer si les fonctionnalités demandées ont été implémentées
+          3. Analyser la qualité de l'implémentation par rapport aux attentes du document"
+          else
+            DOCUMENT_SECTION="DOCUMENT DE TEST: Non disponible"
+          fi
+          
+          cat > /tmp/prompt.txt << PROMPT_EOF
+          Tu es un expert en analyse de code et qualité logicielle. Analyse le projet suivant basé sur les métriques SonarCloud et le document de test du candidat, puis génère un rapport complet en français.
       
           INFORMATIONS DU PROJET:
           - Nom du projet: ${{ inputs.repo_name }}
           - Branche: ${{ inputs.branch_name }}
+      
+          $DOCUMENT_SECTION
       
           MÉTRIQUES SONARCLOUD:
           - Bugs: ${{ steps.sonar-metrics.outputs.bugs }}
@@ -119,7 +185,8 @@ jobs:
       
           Réponds UNIQUEMENT au format JSON suivant avec l'analyse au format HTML simple (sans styles inline):
           {
-            "score": [score de 0 à 100],
+            "score": [score de 0 à 100 basé sur la qualité du code et les métriques SonarCloud],
+            "percentage_advancement": [pourcentage de 0 à 100 indiquant l'avancement par rapport au document de test],
             "analysis_html": "<div class=\"space-y-1\"><p class=\"text-electric-teal font-semibold\">Points forts:</p><div class=\"pl-4 space-y-0.5\"><p class=\"text-sm text-cool-gray\">Point fort 1</p><p class=\"text-sm text-cool-gray\">Point fort 2</p><p class=\"text-sm text-cool-gray\">Point fort 3</p></div></div><div class=\"space-y-1\"><p class=\"text-vibrant-orange font-semibold\">Points faibles:</p><div class=\"pl-4 space-y-0.5\"><p class=\"text-sm text-cool-gray\">Point faible 1</p><p class=\"text-sm text-cool-gray\">Point faible 2</p><p class=\"text-sm text-cool-gray\">Point faible 3</p></div></div><div class=\"space-y-1\"><p class=\"text-deep-blue font-semibold\">Recommandations:</p><div class=\"pl-4 space-y-0.5\"><p class=\"text-sm text-cool-gray\">Recommandation 1</p><p class=\"text-sm text-cool-gray\">Recommandation 2</p><p class=\"text-sm text-cool-gray\">Recommandation 3</p></div></div>"
           }
       
@@ -127,7 +194,10 @@ jobs:
           - Utilise UNIQUEMENT les classes CSS suivantes: space-y-1, text-electric-teal, text-vibrant-orange, text-deep-blue, font-semibold, pl-4, space-y-0.5, text-sm, text-cool-gray
           - NE mets PAS de styles inline (pas de style="...")
           - Génère 3-5 points pour chaque section (Points forts, Points faibles, Recommandations)
-          - Base ton analyse sur les métriques SonarCloud fournies
+          - Base ton analyse sur les métriques SonarCloud ET le document de test fourni
+          - Si un document de test est disponible, base principalement les "Points forts" et "Points faibles" sur la correspondance avec les exigences du document
+          - Le "score" reflète la qualité technique du code (métriques SonarCloud)
+          - Le "percentage_advancement" reflète le pourcentage de réalisation des objectifs du document de test
           - Retourne UNIQUEMENT le JSON, sans texte supplémentaire ni markdown
           PROMPT_EOF
           
@@ -191,6 +261,7 @@ jobs:
           
           # Try to parse JSON response - USE -r flag to get raw string without extra escaping
           SCORE=$(echo "$AI_RESPONSE" | jq -r '.score // "N/A"' 2>/dev/null)
+          PERCENTAGE_ADVANCEMENT=$(echo "$AI_RESPONSE" | jq -r '.percentage_advancement // "N/A"' 2>/dev/null)
           # CRITICAL CHANGE: Save HTML to file first to avoid shell escaping issues
           echo "$AI_RESPONSE" | jq -r '.analysis_html // "N/A"' 2>/dev/null > /tmp/analysis_html.txt
           ANALYSIS_HTML=$(cat /tmp/analysis_html.txt)
@@ -209,10 +280,23 @@ jobs:
               SCORE="50"
             fi
             
+            EXTRACTED_PERCENTAGE=$(echo "$AI_RESPONSE" | grep -o '"percentage_advancement"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]*' | head -1)
+            if [ -n "$EXTRACTED_PERCENTAGE" ] && [ "$EXTRACTED_PERCENTAGE" -ge 0 ] && [ "$EXTRACTED_PERCENTAGE" -le 100 ]; then
+              PERCENTAGE_ADVANCEMENT="$EXTRACTED_PERCENTAGE"
+            else
+              PERCENTAGE_ADVANCEMENT="0"
+            fi
+            
             ANALYSIS_HTML='<div class="space-y-1"><p class="text-vibrant-orange font-semibold">Points faibles:</p><div class="pl-4 space-y-0.5"><p class="text-sm text-cool-gray">La réponse AI a été tronquée ou n'\''a pas pu être parsée correctement</p></div></div>'
           fi
           
+          # Ensure percentage_advancement has a valid value
+          if [ "$PERCENTAGE_ADVANCEMENT" = "N/A" ] || [ -z "$PERCENTAGE_ADVANCEMENT" ]; then
+            PERCENTAGE_ADVANCEMENT="0"
+          fi
+          
           echo "score=$SCORE" >> $GITHUB_OUTPUT
+          echo "percentage_advancement=$PERCENTAGE_ADVANCEMENT" >> $GITHUB_OUTPUT
           echo "analysis_html<<EOF" >> $GITHUB_OUTPUT
           echo "$ANALYSIS_HTML" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -220,7 +304,8 @@ jobs:
       - name: Display AI Analysis Results
         run: |
           echo "=== RÉSULTATS DE L'ANALYSE IA ==="
-          echo "Score: ${{ steps.ai-analysis.outputs.score }}/100"
+          echo "Score (qualité technique): ${{ steps.ai-analysis.outputs.score }}/100"
+          echo "Pourcentage d'avancement: ${{ steps.ai-analysis.outputs.percentage_advancement }}%"
           echo ""
           echo "=== RAPPORT HTML COMPLET ==="
           echo "${{ steps.ai-analysis.outputs.analysis_html }}"

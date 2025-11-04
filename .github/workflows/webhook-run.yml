@@ -17,6 +17,10 @@ on:
         required: false
         type: string
         default: ""
+      ai_percentage_advancement:
+        required: false
+        type: string
+        default: "0"
 
 jobs:
   send-kpi:
@@ -66,12 +70,14 @@ jobs:
           COMMIT_DATE: ${{ steps.commit-data.outputs.created_at }}
           AI_SCORE: ${{ inputs.ai_score }}
           AI_ANALYSIS_HTML: ${{ inputs.ai_analysis_html }}
+          AI_PERCENTAGE_ADVANCEMENT: ${{ inputs.ai_percentage_advancement }}
         run: |
           TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
           # Handle empty or null values with defaults
           AI_SCORE=${AI_SCORE:-"0"}
           AI_ANALYSIS_HTML=${AI_ANALYSIS_HTML:-""}
+          AI_PERCENTAGE_ADVANCEMENT=${AI_PERCENTAGE_ADVANCEMENT:-"0"}
           COMMIT_MESSAGE=${COMMIT_MESSAGE:-"No commit message"}
 
           # Clean up newlines but let jq handle all JSON escaping
@@ -94,6 +100,7 @@ jobs:
             --arg commitDate "$COMMIT_DATE" \
             --arg aiScore "$AI_SCORE" \
             --arg aiAnalysisHtml "$AI_ANALYSIS_HTML_CLEAN" \
+            --arg aiPercentageAdvancement "$AI_PERCENTAGE_ADVANCEMENT" \
             '{
               serverUrl: $serverUrl,
               taskId: $taskId,
@@ -128,7 +135,8 @@ jobs:
               },
               aiAnalysis: {
                 score: ($aiScore | tonumber),
-                analysisHtml: $aiAnalysisHtml
+                analysisHtml: $aiAnalysisHtml,
+                percentageAdvancement: ($aiPercentageAdvancement | tonumber)
               }
             }')
 

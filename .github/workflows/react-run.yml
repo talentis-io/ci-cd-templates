@@ -56,4 +56,5 @@ jobs:
       branch_name: ${{ inputs.branch_name }}
       ai_score: ${{ needs.ai-analysis.outputs.score }}
       ai_analysis_html: ${{ needs.ai-analysis.outputs.analysis_html }}
+      ai_percentage_advancement: ${{ needs.ai-analysis.outputs.percentage_advancement }}
     secrets: inherit

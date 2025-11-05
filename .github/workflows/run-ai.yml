@@ -66,41 +66,38 @@ jobs:
           echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
           echo "lines_of_code=$LINES_OF_CODE" >> $GITHUB_OUTPUT
 
-      - name: Prepare project context (with code samples)
-        id: project-context
-        run: |
-          echo "Extracting code context..."
-
-          # Collect representative source code (limit size for token control)
-          CODE_SNIPPETS=$(find src -type f \( -name "*.js" -o -name "*.tsx" \) \
-          -not -path "*/node_modules/*" | head -5 | xargs -I{} sh -c 'echo "===== {} ====="; grep -E "function |class |useEffect|useState" "{}"; echo ""')
-
-          # Limit total characters to 8000 (avoid large payload)
-          CODE_SNIPPETS=$(echo "$CODE_SNIPPETS" | head -c 8000)
-
-          # Include package.json
-          PACKAGE_CONTENT=""
-          if [ -f "package.json" ]; then
-            PACKAGE_CONTENT=$(cat package.json | head -n 100)
-          fi
-
-          # Include README.md
-          README_CONTENT=""
-          if [ -f "README.md" ]; then
-            README_CONTENT=$(head -n 50 README.md)
-          fi
-
-          echo "code_snippets<<EOF" >> $GITHUB_OUTPUT
-          echo "$CODE_SNIPPETS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-          echo "package_content<<EOF" >> $GITHUB_OUTPUT
-          echo "$PACKAGE_CONTENT" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-          echo "readme_content<<EOF" >> $GITHUB_OUTPUT
-          echo "$README_CONTENT" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          - name: Prepare project context
+          id: project-context
+          run: |
+            echo "Extracting code context..."
+        
+            CODE_SNIPPETS=$(find src -type f \( -name "*.js" -o -name "*.jsx" -o -name "*.ts" -o -name "*.tsx" \) \
+              -not -path "*/node_modules/*" | head -3 | xargs -I{} sh -c 'echo "===== {} ====="; head -n 40 "{}"; echo ""')
+        
+            PACKAGE_CONTENT=""
+            if [ -f "package.json" ]; then
+              PACKAGE_CONTENT=$(cat package.json | head -n 100)
+            fi
+        
+            README_CONTENT=""
+            if [ -f "README.md" ]; then
+              README_CONTENT=$(head -n 50 README.md)
+            fi
+        
+            # 🧠 Compress the collected code for smaller prompt size
+            COMPRESSED_CODE=$(echo "$CODE_SNIPPETS" | gzip | base64)
+        
+            echo "compressed_code<<EOF" >> $GITHUB_OUTPUT
+            echo "$COMPRESSED_CODE" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+        
+            echo "package_content<<EOF" >> $GITHUB_OUTPUT
+            echo "$PACKAGE_CONTENT" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+        
+            echo "readme_content<<EOF" >> $GITHUB_OUTPUT
+            echo "$README_CONTENT" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT        
 
       - name: Get test attachment document
         id: test-attachment

@@ -295,11 +295,13 @@ jobs:
             PERCENTAGE_ADVANCEMENT="0"
           fi
           
-          echo "score=$SCORE" >> $GITHUB_OUTPUT
-          echo "percentage_advancement=$PERCENTAGE_ADVANCEMENT" >> $GITHUB_OUTPUT
-          echo "analysis_html<<EOF" >> $GITHUB_OUTPUT
-          echo "$ANALYSIS_HTML" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          {
+            echo "score=$SCORE"
+            echo "percentage_advancement=$PERCENTAGE_ADVANCEMENT"
+            echo "analysis_html<<EOF"
+            echo "$ANALYSIS_HTML"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
 
       - name: Display AI Analysis Results
         run: |

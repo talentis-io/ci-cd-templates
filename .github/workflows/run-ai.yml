@@ -72,8 +72,8 @@ jobs:
           echo "Extracting code context..."
 
           # Collect representative source code (limit size for token control)
-          CODE_SNIPPETS=$(find . -type f \( -name "*.js" -o -name "*.jsx" -o -name "*.ts" -o -name "*.tsx" \) \
-            -not -path "*/node_modules/*" | head -10 | xargs -I{} sh -c 'echo "===== {} ====="; head -n 100 "{}"; echo ""')
+          CODE_SNIPPETS=$(find src -type f \( -name "*.js" -o -name "*.tsx" \) \
+          -not -path "*/node_modules/*" | head -5 | xargs -I{} sh -c 'echo "===== {} ====="; grep -E "function |class |useEffect|useState" "{}"; echo ""')
 
           # Limit total characters to 8000 (avoid large payload)
           CODE_SNIPPETS=$(echo "$CODE_SNIPPETS" | head -c 8000)

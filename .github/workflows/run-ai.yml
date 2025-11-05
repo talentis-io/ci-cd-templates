@@ -13,14 +13,6 @@ on:
         required: false
         type: string
         default: ""
-      max_files_to_analyze:
-        required: false
-        type: number
-        default: 15
-      max_lines_per_file:
-        required: false
-        type: number
-        default: 300
     outputs:
       score:
         description: "AI analysis score"
@@ -77,80 +69,11 @@ jobs:
           echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
           echo "lines_of_code=$LINES_OF_CODE" >> $GITHUB_OUTPUT
 
-      - name: Extract and Prepare Code Samples
-        id: code-extraction
-        env:
-          MAX_FILES: ${{ inputs.max_files_to_analyze }}
-          MAX_LINES: ${{ inputs.max_lines_per_file }}
-        run: |
-          echo "Extracting code samples for AI analysis..."
-          
-          # Create output file
-          CODE_SAMPLES_FILE="/tmp/code_samples.txt"
-          > "$CODE_SAMPLES_FILE"
-          
-          # Find relevant source files (prioritize main source files, exclude node_modules, build, dist, etc.)
-          FILES=$(find . -type f \
-            \( -name "*.js" -o -name "*.jsx" -o -name "*.ts" -o -name "*.tsx" -o -name "*.py" -o -name "*.java" -o -name "*.go" -o -name "*.rb" -o -name "*.php" -o -name "*.cs" -o -name "*.cpp" -o -name "*.c" -o -name "*.h" \) \
-            -not -path "*/node_modules/*" \
-            -not -path "*/dist/*" \
-            -not -path "*/build/*" \
-            -not -path "*/.next/*" \
-            -not -path "*/coverage/*" \
-            -not -path "*/__pycache__/*" \
-            -not -path "*/vendor/*" \
-            -not -path "*/.git/*" \
-            | head -n "$MAX_FILES")
-          
-          FILE_COUNT=0
-          TOTAL_LINES=0
-          
-          echo "=== CODE SAMPLES FOR AI ANALYSIS ===" >> "$CODE_SAMPLES_FILE"
-          echo "" >> "$CODE_SAMPLES_FILE"
-          
-          for file in $FILES; do
-            if [ -f "$file" ]; then
-              FILE_COUNT=$((FILE_COUNT + 1))
-              LINE_COUNT=$(wc -l < "$file")
-              
-              echo "--- FILE: $file (Total lines: $LINE_COUNT) ---" >> "$CODE_SAMPLES_FILE"
-              
-              # Limit lines per file to avoid token overflow
-              if [ "$LINE_COUNT" -gt "$MAX_LINES" ]; then
-                head -n "$MAX_LINES" "$file" >> "$CODE_SAMPLES_FILE"
-                echo "" >> "$CODE_SAMPLES_FILE"
-                echo "... (truncated, showing first $MAX_LINES of $LINE_COUNT lines)" >> "$CODE_SAMPLES_FILE"
-                TOTAL_LINES=$((TOTAL_LINES + MAX_LINES))
-              else
-                cat "$file" >> "$CODE_SAMPLES_FILE"
-                TOTAL_LINES=$((TOTAL_LINES + LINE_COUNT))
-              fi
-              
-              echo "" >> "$CODE_SAMPLES_FILE"
-              echo "" >> "$CODE_SAMPLES_FILE"
-            fi
-          done
-          
-          echo "=== END OF CODE SAMPLES ===" >> "$CODE_SAMPLES_FILE"
-          
-          echo "Extracted $FILE_COUNT files with approximately $TOTAL_LINES lines of code"
-          
-          # Save to output
-          echo "code_samples<<EOF" >> $GITHUB_OUTPUT
-          cat "$CODE_SAMPLES_FILE" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          
-          echo "file_count=$FILE_COUNT" >> $GITHUB_OUTPUT
-          echo "total_lines=$TOTAL_LINES" >> $GITHUB_OUTPUT
-
       - name: Prepare project context
         id: project-context
         run: |
-          # Get project structure
-          PROJECT_STRUCTURE=$(find . -type f \( -name "*.js" -o -name "*.jsx" -o -name "*.ts" -o -name "*.tsx" -o -name "*.json" -o -name "package.json" -o -name "*.md" \) \
-            -not -path "*/node_modules/*" \
-            -not -path "*/dist/*" \
-            -not -path "*/build/*" | head -30)
+          # Get project structure and key files
+          PROJECT_STRUCTURE=$(find . -type f -name "*.js" -o -name "*.jsx" -o -name "*.ts" -o -name "*.tsx" -o -name "*.json" -o -name "package.json" -o -name "*.md" | head -20)
           
           # Get package.json content if exists
           PACKAGE_CONTENT=""
@@ -228,71 +151,60 @@ jobs:
         run: |
           # Prepare the prompt for AI analysis
           DOCUMENT_TEXT="${{ steps.test-attachment.outputs.document_text }}"
-          CODE_SAMPLES="${{ steps.code-extraction.outputs.code_samples }}"
           
-          # Prepare prompt content in a file to avoid shell escaping issues
-          cat > /tmp/prompt_content.txt << 'CONTENT_EOF'
-          Tu es un expert en analyse de code et qualite logicielle. Analyse le projet suivant base sur les metriques SonarCloud, le document de test du candidat, ET le code source fourni, puis genere un rapport complet en francais.
-
+          # Check if document text exists
+          if [ -n "$DOCUMENT_TEXT" ] && [ "$DOCUMENT_TEXT" != "" ]; then
+            DOCUMENT_SECTION="DOCUMENT DE TEST DU CANDIDAT:
+          Ce document contient les instructions et le contexte du test à réaliser. Utilise-le pour évaluer l'avancement et la pertinence de la solution implémentée.
+          
+          $DOCUMENT_TEXT
+          
+          BASÉ SUR CE DOCUMENT, tu dois:
+          1. Évaluer le degré d'avancement (0-100%) des objectifs du test
+          2. Évaluer la qualité de l'implémentation par rapport aux attentes
+          3. Produire un score global (0-100) combinant la qualité technique (SonarCloud) et la conformité au document de test"
+          else
+            DOCUMENT_SECTION="DOCUMENT DE TEST: Non disponible"
+          fi
+          
+          cat > /tmp/prompt.txt << PROMPT_EOF
+          Tu es un expert en analyse de code et qualité logicielle. Analyse le projet suivant basé sur les métriques SonarCloud et le document de test du candidat, puis génère un rapport complet en français.
+      
           INFORMATIONS DU PROJET:
-          CONTENT_EOF
-          
-          # Add dynamic content
-          cat >> /tmp/prompt_content.txt << DYNAMIC_EOF
           - Nom du projet: ${{ inputs.repo_name }}
           - Branche: ${{ inputs.branch_name }}
-          - Fichiers analyses: ${{ steps.code-extraction.outputs.file_count }}
-          - Lignes de code extraites: ${{ steps.code-extraction.outputs.total_lines }}
-
-          DOCUMENT DE TEST DU CANDIDAT:
-          $DOCUMENT_TEXT
-
-          METRIQUES SONARCLOUD:
+      
+          $DOCUMENT_SECTION
+      
+          MÉTRIQUES SONARCLOUD:
           - Bugs: ${{ steps.sonar-metrics.outputs.bugs }}
-          - Vulnerabilites: ${{ steps.sonar-metrics.outputs.vulnerabilities }}
+          - Vulnérabilités: ${{ steps.sonar-metrics.outputs.vulnerabilities }}
           - Code smells: ${{ steps.sonar-metrics.outputs.code_smells }}
           - Couverture de code: ${{ steps.sonar-metrics.outputs.coverage }}%
-          - Lignes de code totales: ${{ steps.sonar-metrics.outputs.lines_of_code }}
-
-          CODE SOURCE A ANALYSER:
-          $CODE_SAMPLES
-
-          INSTRUCTIONS D ANALYSE:
-          1. Analyse le code source fourni pour identifier:
-            - La qualite de l architecture et de l organisation du code
-            - Les patterns de programmation utilises (bonnes pratiques, anti-patterns)
-            - La lisibilite et la maintenabilite du code
-            - La gestion des erreurs et la robustesse
-            - La securite du code
-            - La conformite avec les exigences du document de test
-
-          2. Compare le code avec les metriques SonarCloud pour valider ou nuancer les resultats
-
-          3. Evalue si l implementation repond aux objectifs du document de test
-
-          Reponds UNIQUEMENT au format JSON suivant avec l analyse au format HTML simple (sans styles inline):
+          - Lignes de code: ${{ steps.sonar-metrics.outputs.lines_of_code }}
+      
+          Réponds UNIQUEMENT au format JSON suivant avec l'analyse au format HTML simple (sans styles inline):
           {
-            "score": [score de 0 a 100 base sur la qualite du code, l analyse du code source ET les metriques SonarCloud],
-            "percentage_advancement": [pourcentage de 0 a 100 indiquant l avancement par rapport au document de test],
+            "score": [score de 0 à 100 basé sur la qualité du code et les métriques SonarCloud],
+            "percentage_advancement": [pourcentage de 0 à 100 indiquant l'avancement par rapport au document de test],
             "analysis_html": "<div class=\"space-y-1\"><p class=\"text-electric-teal font-semibold\">Points forts:</p><div class=\"pl-4 space-y-0.5\"><p class=\"text-sm text-cool-gray\">Point fort 1</p><p class=\"text-sm text-cool-gray\">Point fort 2</p><p class=\"text-sm text-cool-gray\">Point fort 3</p></div></div><div class=\"space-y-1\"><p class=\"text-vibrant-orange font-semibold\">Points faibles:</p><div class=\"pl-4 space-y-0.5\"><p class=\"text-sm text-cool-gray\">Point faible 1</p><p class=\"text-sm text-cool-gray\">Point faible 2</p><p class=\"text-sm text-cool-gray\">Point faible 3</p></div></div><div class=\"space-y-1\"><p class=\"text-deep-blue font-semibold\">Recommandations:</p><div class=\"pl-4 space-y-0.5\"><p class=\"text-sm text-cool-gray\">Recommandation 1</p><p class=\"text-sm text-cool-gray\">Recommandation 2</p><p class=\"text-sm text-cool-gray\">Recommandation 3</p></div></div>"
           }
-
+      
           IMPORTANT:
           - Utilise UNIQUEMENT les classes CSS suivantes: space-y-1, text-electric-teal, text-vibrant-orange, text-deep-blue, font-semibold, pl-4, space-y-0.5, text-sm, text-cool-gray
           - NE mets PAS de styles inline (pas de style="...")
-          - Genere 3-5 points pour chaque section (Points forts, Points faibles, Recommandations)
-          - Base ton analyse PRINCIPALEMENT sur le code source fourni, en complement des metriques SonarCloud
-          - Cite des exemples specifiques du code dans ton analyse (noms de fichiers, fonctions, patterns observes)
-          - Si un document de test est disponible, verifie que le code implemente les fonctionnalites demandees
-          - Le "score" reflete une evaluation globale basee sur: la qualite du code observe (60%), les metriques SonarCloud (20%), et la conformite au document de test (20%)
-          - Le "percentage_advancement" reflete le pourcentage de realisation des objectifs du document de test base sur l analyse du code
-          - Retourne UNIQUEMENT le JSON, sans texte supplementaire ni markdown
-          DYNAMIC_EOF
-                    
-                    PROMPT=$(cat /tmp/prompt_content.txt)
-                    ESCAPED_PROMPT=$(echo "$PROMPT" | jq -R -s .)
-                    
-                    cat > /tmp/payload.json << JSON_EOF
+          - Génère 3-5 points pour chaque section (Points forts, Points faibles, Recommandations)
+          - Base ton analyse sur les métriques SonarCloud ET le document de test fourni
+          - Si un document de test est disponible, base principalement les "Points forts" et "Points faibles" sur la correspondance avec les exigences du document
+          - Le "score" reflète une évaluation globale du projet, combinant la qualité technique du code (métriques SonarCloud) et le degré de réalisation des objectifs du document de test, en tenant compte de la propreté du code, de la couverture des fonctionnalités demandées et de la pertinence de l'implémentation.
+          - Le "percentage_advancement" reflète le pourcentage de réalisation des objectifs du document de test
+          - Retourne UNIQUEMENT le JSON, sans texte supplémentaire ni markdown
+          PROMPT_EOF
+          
+          PROMPT=$(cat /tmp/prompt.txt)
+          ESCAPED_PROMPT=$(echo "$PROMPT" | jq -R -s .)
+          
+          cat > /tmp/payload.json << JSON_EOF
           {
             "model": "$OLLAMA_MODEL",
             "messages": [
@@ -308,7 +220,6 @@ jobs:
           
           echo "DEBUG: Calling API at $OLLAMA_BASE_URL"
           echo "DEBUG: Model: $OLLAMA_MODEL"
-          echo "DEBUG: Prompt size: ${#PROMPT} characters"
           
           # Call API with better error handling
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$OLLAMA_BASE_URL/v1/chat/completions" \
@@ -348,9 +259,10 @@ jobs:
             echo "WARNING: Response was truncated due to token limit"
           fi
           
-          # Try to parse JSON response
+          # Try to parse JSON response - USE -r flag to get raw string without extra escaping
           SCORE=$(echo "$AI_RESPONSE" | jq -r '.score // "N/A"' 2>/dev/null)
           PERCENTAGE_ADVANCEMENT=$(echo "$AI_RESPONSE" | jq -r '.percentage_advancement // "N/A"' 2>/dev/null)
+          # CRITICAL CHANGE: Save HTML to file first to avoid shell escaping issues
           echo "$AI_RESPONSE" | jq -r '.analysis_html // "N/A"' 2>/dev/null > /tmp/analysis_html.txt
           ANALYSIS_HTML=$(cat /tmp/analysis_html.txt)
           
@@ -375,7 +287,7 @@ jobs:
               PERCENTAGE_ADVANCEMENT="0"
             fi
             
-            ANALYSIS_HTML='<div class="space-y-1"><p class="text-vibrant-orange font-semibold">Points faibles:</p><div class="pl-4 space-y-0.5"><p class="text-sm text-cool-gray">La reponse AI a ete tronquee ou n a pas pu etre parsee correctement</p></div></div>'
+            ANALYSIS_HTML='<div class="space-y-1"><p class="text-vibrant-orange font-semibold">Points faibles:</p><div class="pl-4 space-y-0.5"><p class="text-sm text-cool-gray">La réponse AI a été tronquée ou n'\''a pas pu être parsée correctement</p></div></div>'
           fi
           
           # Ensure percentage_advancement has a valid value
@@ -393,11 +305,9 @@ jobs:
 
       - name: Display AI Analysis Results
         run: |
-          echo "=== RESULTATS DE L ANALYSE IA ==="
-          echo "Fichiers analyses: ${{ steps.code-extraction.outputs.file_count }}"
-          echo "Lignes de code analysees: ${{ steps.code-extraction.outputs.total_lines }}"
-          echo "Score (qualite technique): ${{ steps.ai-analysis.outputs.score }}/100"
-          echo "Pourcentage d avancement: ${{ steps.ai-analysis.outputs.percentage_advancement }}%"
+          echo "=== RÉSULTATS DE L'ANALYSE IA ==="
+          echo "Score (qualité technique): ${{ steps.ai-analysis.outputs.score }}/100"
+          echo "Pourcentage d'avancement: ${{ steps.ai-analysis.outputs.percentage_advancement }}%"
           echo ""
           echo "=== RAPPORT HTML COMPLET ==="
           echo "${{ steps.ai-analysis.outputs.analysis_html }}"

@@ -384,7 +384,7 @@ jobs:
               PERCENTAGE_ADVANCEMENT="0"
             fi
             
-            ANALYSIS_HTML='<div class="space-y-1"><p class="text-vibrant-orange font-semibold">Points faibles:</p><div class="pl-4 space-y-0.5"><p class="text-sm text-cool-gray">La réponse AI a été tronquée ou n'\''a pas pu être parsée correctement</p></div></div>'
+            ANALYSIS_HTML='<div class="space-y-1"><p class="text-vibrant-orange font-semibold">Points faibles:</p><div class="pl-4 space-y-0.5"><p class="text-sm text-cool-gray">La reponse AI a ete tronquee ou n a pas pu etre parsee correctement</p></div></div>'
           fi
           
           # Ensure percentage_advancement has a valid value

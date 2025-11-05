@@ -160,9 +160,9 @@ jobs:
           $DOCUMENT_TEXT
           
           BASÉ SUR CE DOCUMENT, tu dois:
-          1. Calculer un pourcentage d'avancement (0-100%) indiquant dans quelle mesure le candidat a réalisé les objectifs du test
-          2. Évaluer si les fonctionnalités demandées ont été implémentées
-          3. Analyser la qualité de l'implémentation par rapport aux attentes du document"
+          1. Évaluer le degré d'avancement (0-100%) des objectifs du test
+          2. Évaluer la qualité de l'implémentation par rapport aux attentes
+          3. Produire un score global (0-100) combinant la qualité technique (SonarCloud) et la conformité au document de test
           else
             DOCUMENT_SECTION="DOCUMENT DE TEST: Non disponible"
           fi
@@ -196,7 +196,7 @@ jobs:
           - Génère 3-5 points pour chaque section (Points forts, Points faibles, Recommandations)
           - Base ton analyse sur les métriques SonarCloud ET le document de test fourni
           - Si un document de test est disponible, base principalement les "Points forts" et "Points faibles" sur la correspondance avec les exigences du document
-          - Le "score" reflète la qualité technique du code (métriques SonarCloud)
+          - Le "score" reflète une évaluation globale du projet, combinant la qualité technique du code (métriques SonarCloud) et le degré de réalisation des objectifs du document de test, en tenant compte de la propreté du code, de la couverture des fonctionnalités demandées et de la pertinence de l'implémentation.
           - Le "percentage_advancement" reflète le pourcentage de réalisation des objectifs du document de test
           - Retourne UNIQUEMENT le JSON, sans texte supplémentaire ni markdown
           PROMPT_EOF

@@ -31,7 +31,6 @@ jobs:
       score: ${{ steps.ai-analysis.outputs.score }}
       analysis_html: ${{ steps.ai-analysis.outputs.analysis_html }}
       percentage_advancement: ${{ steps.ai-analysis.outputs.percentage_advancement }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -46,58 +45,56 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_PROJECT_KEY: ${{ inputs.sonar_project_key != '' && inputs.sonar_project_key || format('talentis-io_{0}', inputs.repo_name) }}
         run: |
+          # Wait a moment for SonarCloud analysis to complete
           sleep 10
+          
+          # Get project measures from SonarCloud
           RESPONSE=$(curl -s -u $SONAR_TOKEN: \
             "https://sonarcloud.io/api/measures/component?component=$SONAR_PROJECT_KEY&metricKeys=bugs,vulnerabilities,security_hotspots,code_smells,coverage,duplicated_lines_density,ncloc,sqale_index,reliability_rating,security_rating,sqale_rating")
-
+          
           echo "sonar_response<<EOF" >> $GITHUB_OUTPUT
           echo "$RESPONSE" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-
+          
+          # Extract key metrics
           BUGS=$(echo "$RESPONSE" | jq -r '.component.measures[] | select(.metric == "bugs") | .value // "0"')
           VULNERABILITIES=$(echo "$RESPONSE" | jq -r '.component.measures[] | select(.metric == "vulnerabilities") | .value // "0"')
           CODE_SMELLS=$(echo "$RESPONSE" | jq -r '.component.measures[] | select(.metric == "code_smells") | .value // "0"')
           COVERAGE=$(echo "$RESPONSE" | jq -r '.component.measures[] | select(.metric == "coverage") | .value // "0"')
           LINES_OF_CODE=$(echo "$RESPONSE" | jq -r '.component.measures[] | select(.metric == "ncloc") | .value // "0"')
-
+          
           echo "bugs=$BUGS" >> $GITHUB_OUTPUT
           echo "vulnerabilities=$VULNERABILITIES" >> $GITHUB_OUTPUT
           echo "code_smells=$CODE_SMELLS" >> $GITHUB_OUTPUT
           echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
           echo "lines_of_code=$LINES_OF_CODE" >> $GITHUB_OUTPUT
 
-      - name: Prepare project context (with code samples)
+      - name: Prepare project context
         id: project-context
         run: |
-          echo "Extracting code context..."
-
-          # Collect representative source code (limit size for token control)
-          CODE_SNIPPETS=$(find . -type f \( -name "*.js" -o -name "*.jsx" -o -name "*.ts" -o -name "*.tsx" \) \
-            -not -path "*/node_modules/*" | head -10 | xargs -I{} sh -c 'echo "===== {} ====="; head -n 100 "{}"; echo ""')
-
-          # Limit total characters to 8000 (avoid large payload)
-          CODE_SNIPPETS=$(echo "$CODE_SNIPPETS" | head -c 8000)
-
-          # Include package.json
+          # Get project structure and key files
+          PROJECT_STRUCTURE=$(find . -type f -name "*.js" -o -name "*.jsx" -o -name "*.ts" -o -name "*.tsx" -o -name "*.json" -o -name "package.json" -o -name "*.md" | head -20)
+          
+          # Get package.json content if exists
           PACKAGE_CONTENT=""
           if [ -f "package.json" ]; then
-            PACKAGE_CONTENT=$(cat package.json | head -n 100)
+            PACKAGE_CONTENT=$(cat package.json)
           fi
-
-          # Include README.md
+          
+          # Get README content if exists
           README_CONTENT=""
           if [ -f "README.md" ]; then
-            README_CONTENT=$(head -n 50 README.md)
+            README_CONTENT=$(head -50 README.md)
           fi
-
-          echo "code_snippets<<EOF" >> $GITHUB_OUTPUT
-          echo "$CODE_SNIPPETS" >> $GITHUB_OUTPUT
+          
+          echo "project_structure<<EOF" >> $GITHUB_OUTPUT
+          echo "$PROJECT_STRUCTURE" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-
+          
           echo "package_content<<EOF" >> $GITHUB_OUTPUT
           echo "$PACKAGE_CONTENT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-
+          
           echo "readme_content<<EOF" >> $GITHUB_OUTPUT
           echo "$README_CONTENT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -108,27 +105,40 @@ jobs:
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
           REPO_NAME: ${{ inputs.repo_name }}
         run: |
+          # Call the webhook API to get test attachment text
           if [ -z "$WEBHOOK_URL" ]; then
             echo "WARNING: WEBHOOK_URL not set, skipping test attachment retrieval"
             echo "document_text=" >> $GITHUB_OUTPUT
             exit 0
           fi
-
+          
+          # Extract base URL (remove trailing /webhook/sonar if present)
           BASE_URL=$(echo "$WEBHOOK_URL" | sed 's|/webhook/sonar$||' | sed 's|/webhook$||' | sed 's|/$||')
+          
+          # Call the test attachment endpoint
           RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "${BASE_URL}/webhook/test-attachment/${REPO_NAME}")
+          
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           RESPONSE_BODY=$(echo "$RESPONSE" | sed '$d')
-
+          
+          echo "DEBUG: Test attachment HTTP Status: $HTTP_CODE"
+          
           if [ "$HTTP_CODE" = "200" ]; then
+            # Extract textContent from response
             TEXT_CONTENT=$(echo "$RESPONSE_BODY" | jq -r '.textContent // ""')
+            
             if [ -n "$TEXT_CONTENT" ] && [ "$TEXT_CONTENT" != "null" ]; then
+              echo "DEBUG: Successfully retrieved test attachment document"
               echo "document_text<<EOF" >> $GITHUB_OUTPUT
               echo "$TEXT_CONTENT" >> $GITHUB_OUTPUT
               echo "EOF" >> $GITHUB_OUTPUT
             else
+              echo "WARNING: Empty textContent in response"
               echo "document_text=" >> $GITHUB_OUTPUT
             fi
           else
+            echo "WARNING: Failed to retrieve test attachment (HTTP $HTTP_CODE)"
+            echo "Response: $RESPONSE_BODY"
             echo "document_text=" >> $GITHUB_OUTPUT
           fi
 
@@ -139,91 +149,152 @@ jobs:
           OLLAMA_BASE_URL: ${{ secrets.OLLAMA_BASE_URL || 'https://ollama.com' }}
           OLLAMA_MODEL: ${{ secrets.OLLAMA_MODEL || 'gpt-oss:120b' }}
         run: |
+          # Prepare the prompt for AI analysis
           DOCUMENT_TEXT="${{ steps.test-attachment.outputs.document_text }}"
-
+          
+          # Check if document text exists
           if [ -n "$DOCUMENT_TEXT" ] && [ "$DOCUMENT_TEXT" != "" ]; then
             DOCUMENT_SECTION="DOCUMENT DE TEST DU CANDIDAT:
-          Ce document contient les instructions et le contexte du test à réaliser.
+          Ce document contient les instructions et le contexte du test à réaliser. Utilise-le pour évaluer l'avancement et la pertinence de la solution implémentée.
           
           $DOCUMENT_TEXT
           
           BASÉ SUR CE DOCUMENT, tu dois:
-          1. Évaluer le degré d'avancement (0-100%)
-          2. Évaluer la qualité technique (SonarCloud + code)
-          3. Produire un score global (0-100)"
+          1. Évaluer le degré d'avancement (0-100%) des objectifs du test
+          2. Évaluer la qualité de l'implémentation par rapport aux attentes
+          3. Produire un score global (0-100) combinant la qualité technique (SonarCloud) et la conformité au document de test"
           else
             DOCUMENT_SECTION="DOCUMENT DE TEST: Non disponible"
           fi
-
+          
           cat > /tmp/prompt.txt << PROMPT_EOF
-          Tu es un expert en analyse de code et qualité logicielle. Analyse le projet suivant en te basant sur les métriques SonarCloud, le document de test du candidat et le code fourni.
-
+          Tu es un expert en analyse de code et qualité logicielle. Analyse le projet suivant basé sur les métriques SonarCloud et le document de test du candidat, puis génère un rapport complet en français.
+      
           INFORMATIONS DU PROJET:
           - Nom du projet: ${{ inputs.repo_name }}
           - Branche: ${{ inputs.branch_name }}
-
+      
           $DOCUMENT_SECTION
-
+      
           MÉTRIQUES SONARCLOUD:
           - Bugs: ${{ steps.sonar-metrics.outputs.bugs }}
           - Vulnérabilités: ${{ steps.sonar-metrics.outputs.vulnerabilities }}
           - Code smells: ${{ steps.sonar-metrics.outputs.code_smells }}
           - Couverture de code: ${{ steps.sonar-metrics.outputs.coverage }}%
           - Lignes de code: ${{ steps.sonar-metrics.outputs.lines_of_code }}
-
-          EXTRAITS DE CODE SOURCE:
-          ${{ steps.project-context.outputs.code_snippets }}
-
-          INFORMATIONS SUPPLÉMENTAIRES:
-          - package.json:
-          ${{ steps.project-context.outputs.package_content }}
-
-          - README.md (début):
-          ${{ steps.project-context.outputs.readme_content }}
-
-          Réponds UNIQUEMENT au format JSON suivant:
+      
+          Réponds UNIQUEMENT au format JSON suivant avec l'analyse au format HTML simple (sans styles inline):
           {
-            "score": [0-100],
-            "percentage_advancement": [0-100],
-            "analysis_html": "<div class='space-y-1'>...</div>"
+            "score": [score de 0 à 100 basé sur la qualité du code et les métriques SonarCloud],
+            "percentage_advancement": [pourcentage de 0 à 100 indiquant l'avancement par rapport au document de test],
+            "analysis_html": "<div class=\"space-y-1\"><p class=\"text-electric-teal font-semibold\">Points forts:</p><div class=\"pl-4 space-y-0.5\"><p class=\"text-sm text-cool-gray\">Point fort 1</p><p class=\"text-sm text-cool-gray\">Point fort 2</p><p class=\"text-sm text-cool-gray\">Point fort 3</p></div></div><div class=\"space-y-1\"><p class=\"text-vibrant-orange font-semibold\">Points faibles:</p><div class=\"pl-4 space-y-0.5\"><p class=\"text-sm text-cool-gray\">Point faible 1</p><p class=\"text-sm text-cool-gray\">Point faible 2</p><p class=\"text-sm text-cool-gray\">Point faible 3</p></div></div><div class=\"space-y-1\"><p class=\"text-deep-blue font-semibold\">Recommandations:</p><div class=\"pl-4 space-y-0.5\"><p class=\"text-sm text-cool-gray\">Recommandation 1</p><p class=\"text-sm text-cool-gray\">Recommandation 2</p><p class=\"text-sm text-cool-gray\">Recommandation 3</p></div></div>"
           }
-
+      
+          IMPORTANT:
+          - Utilise UNIQUEMENT les classes CSS suivantes: space-y-1, text-electric-teal, text-vibrant-orange, text-deep-blue, font-semibold, pl-4, space-y-0.5, text-sm, text-cool-gray
+          - NE mets PAS de styles inline (pas de style="...")
+          - Génère 3-5 points pour chaque section (Points forts, Points faibles, Recommandations)
+          - Base ton analyse sur les métriques SonarCloud ET le document de test fourni
+          - Si un document de test est disponible, base principalement les "Points forts" et "Points faibles" sur la correspondance avec les exigences du document
+          - Le "score" reflète une évaluation globale du projet, combinant la qualité technique du code (métriques SonarCloud) et le degré de réalisation des objectifs du document de test, en tenant compte de la propreté du code, de la couverture des fonctionnalités demandées et de la pertinence de l'implémentation.
+          - Le "percentage_advancement" reflète le pourcentage de réalisation des objectifs du document de test
+          - Retourne UNIQUEMENT le JSON, sans texte supplémentaire ni markdown
           PROMPT_EOF
-
+          
           PROMPT=$(cat /tmp/prompt.txt)
           ESCAPED_PROMPT=$(echo "$PROMPT" | jq -R -s .)
-
+          
           cat > /tmp/payload.json << JSON_EOF
           {
             "model": "$OLLAMA_MODEL",
             "messages": [
-              {"role": "user", "content": $ESCAPED_PROMPT}
+              {
+                "role": "user",
+                "content": $ESCAPED_PROMPT
+              }
             ],
             "temperature": 0.7,
             "max_tokens": 4000
           }
           JSON_EOF
-
+          
+          echo "DEBUG: Calling API at $OLLAMA_BASE_URL"
+          echo "DEBUG: Model: $OLLAMA_MODEL"
+          
+          # Call API with better error handling
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$OLLAMA_BASE_URL/v1/chat/completions" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $OLLAMA_API_KEY" \
             -d @/tmp/payload.json)
-
+          
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           RESPONSE_BODY=$(echo "$RESPONSE" | sed '$d')
-
+          
+          echo "DEBUG: HTTP Status: $HTTP_CODE"
+          echo "DEBUG: Response: $RESPONSE_BODY" | head -c 500
+          
           if [ "$HTTP_CODE" != "200" ]; then
             echo "ERROR: API returned HTTP $HTTP_CODE"
+            echo "Full response:"
             echo "$RESPONSE_BODY"
             exit 1
           fi
-
+          
+          # Extract the AI response
           AI_RESPONSE=$(echo "$RESPONSE_BODY" | jq -r '.choices[0].message.content // empty')
-          SCORE=$(echo "$AI_RESPONSE" | jq -r '.score // "50"')
-          PERCENTAGE_ADVANCEMENT=$(echo "$AI_RESPONSE" | jq -r '.percentage_advancement // "0"')
-          echo "$AI_RESPONSE" | jq -r '.analysis_html // "N/A"' > /tmp/analysis_html.txt
+          FINISH_REASON=$(echo "$RESPONSE_BODY" | jq -r '.choices[0].finish_reason // "unknown"')
+          
+          if [ -z "$AI_RESPONSE" ]; then
+            echo "ERROR: No AI response extracted"
+            echo "Full response body:"
+            echo "$RESPONSE_BODY"
+            exit 1
+          fi
+          
+          echo "DEBUG: AI Response received (length: ${#AI_RESPONSE})"
+          echo "DEBUG: Finish reason: $FINISH_REASON"
+          
+          # Check if response was truncated
+          if [ "$FINISH_REASON" = "length" ]; then
+            echo "WARNING: Response was truncated due to token limit"
+          fi
+          
+          # Try to parse JSON response - USE -r flag to get raw string without extra escaping
+          SCORE=$(echo "$AI_RESPONSE" | jq -r '.score // "N/A"' 2>/dev/null)
+          PERCENTAGE_ADVANCEMENT=$(echo "$AI_RESPONSE" | jq -r '.percentage_advancement // "N/A"' 2>/dev/null)
+          # CRITICAL CHANGE: Save HTML to file first to avoid shell escaping issues
+          echo "$AI_RESPONSE" | jq -r '.analysis_html // "N/A"' 2>/dev/null > /tmp/analysis_html.txt
           ANALYSIS_HTML=$(cat /tmp/analysis_html.txt)
-
+          
+          # Fallback: if JSON parsing failed, set defaults
+          if [ "$SCORE" = "N/A" ] || [ -z "$SCORE" ]; then
+            echo "WARNING: Could not parse AI response as JSON, using defaults"
+            echo "DEBUG: Raw AI response (first 1000 chars):"
+            echo "$AI_RESPONSE" | head -c 1000
+            echo ""
+            
+            EXTRACTED_SCORE=$(echo "$AI_RESPONSE" | grep -o '"score"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]*' | head -1)
+            if [ -n "$EXTRACTED_SCORE" ] && [ "$EXTRACTED_SCORE" -ge 0 ] && [ "$EXTRACTED_SCORE" -le 100 ]; then
+              SCORE="$EXTRACTED_SCORE"
+            else
+              SCORE="50"
+            fi
+            
+            EXTRACTED_PERCENTAGE=$(echo "$AI_RESPONSE" | grep -o '"percentage_advancement"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]*' | head -1)
+            if [ -n "$EXTRACTED_PERCENTAGE" ] && [ "$EXTRACTED_PERCENTAGE" -ge 0 ] && [ "$EXTRACTED_PERCENTAGE" -le 100 ]; then
+              PERCENTAGE_ADVANCEMENT="$EXTRACTED_PERCENTAGE"
+            else
+              PERCENTAGE_ADVANCEMENT="0"
+            fi
+            
+            ANALYSIS_HTML='<div class="space-y-1"><p class="text-vibrant-orange font-semibold">Points faibles:</p><div class="pl-4 space-y-0.5"><p class="text-sm text-cool-gray">La réponse AI a été tronquée ou n'\''a pas pu être parsée correctement</p></div></div>'
+          fi
+          
+          # Ensure percentage_advancement has a valid value
+          if [ "$PERCENTAGE_ADVANCEMENT" = "N/A" ] || [ -z "$PERCENTAGE_ADVANCEMENT" ]; then
+            PERCENTAGE_ADVANCEMENT="0"
+          fi
+          
           {
             echo "score=$SCORE"
             echo "percentage_advancement=$PERCENTAGE_ADVANCEMENT"
@@ -240,4 +311,5 @@ jobs:
           echo ""
           echo "=== RAPPORT HTML COMPLET ==="
           echo "${{ steps.ai-analysis.outputs.analysis_html }}"
+          echo ""
           echo "=== FIN DU RAPPORT ==="

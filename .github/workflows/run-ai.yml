@@ -162,7 +162,7 @@ jobs:
           BASÉ SUR CE DOCUMENT, tu dois:
           1. Évaluer le degré d'avancement (0-100%) des objectifs du test
           2. Évaluer la qualité de l'implémentation par rapport aux attentes
-          3. Produire un score global (0-100) combinant la qualité technique (SonarCloud) et la conformité au document de test
+          3. Produire un score global (0-100) combinant la qualité technique (SonarCloud) et la conformité au document de test"
           else
             DOCUMENT_SECTION="DOCUMENT DE TEST: Non disponible"
           fi
